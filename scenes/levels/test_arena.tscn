@@ -1,0 +1,165 @@
+[gd_scene load_steps=20 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/player/player.tscn" id="1_player"]
+[ext_resource type="PackedScene" path="res://scenes/enemies/training_dummy.tscn" id="2_dummy"]
+[ext_resource type="Script" path="res://scripts/camera/top_down_camera.gd" id="3_camera"]
+
+[sub_resource type="ProceduralSkyMaterial" id="Sky_mat"]
+sky_top_color = Color(0.36, 0.5, 0.68, 1)
+sky_horizon_color = Color(0.72, 0.7, 0.62, 1)
+ground_bottom_color = Color(0.2, 0.18, 0.15, 1)
+ground_horizon_color = Color(0.72, 0.7, 0.62, 1)
+
+[sub_resource type="Sky" id="Sky_main"]
+sky_material = SubResource("Sky_mat")
+
+[sub_resource type="Environment" id="Env_main"]
+background_mode = 2
+sky = SubResource("Sky_main")
+ambient_light_source = 3
+ambient_light_energy = 0.8
+tonemap_mode = 2
+ssao_enabled = true
+glow_enabled = true
+fog_enabled = true
+fog_light_color = Color(0.68, 0.68, 0.6, 1)
+fog_density = 0.004
+
+[sub_resource type="FastNoiseLite" id="Noise_grass"]
+frequency = 0.02
+
+[sub_resource type="NoiseTexture2D" id="Tex_grass"]
+seamless = true
+noise = SubResource("Noise_grass")
+
+[sub_resource type="StandardMaterial3D" id="Mat_ground"]
+albedo_color = Color(0.42, 0.52, 0.27, 1)
+albedo_texture = SubResource("Tex_grass")
+roughness = 1.0
+uv1_scale = Vector3(8, 8, 8)
+
+[sub_resource type="PlaneMesh" id="Mesh_ground"]
+material = SubResource("Mat_ground")
+size = Vector2(60, 60)
+
+[sub_resource type="BoxShape3D" id="Shape_ground"]
+size = Vector3(60, 1, 60)
+
+[sub_resource type="StandardMaterial3D" id="Mat_crate"]
+albedo_color = Color(0.5, 0.34, 0.18, 1)
+roughness = 0.9
+
+[sub_resource type="BoxMesh" id="Mesh_crate"]
+material = SubResource("Mat_crate")
+
+[sub_resource type="BoxShape3D" id="Shape_crate"]
+
+[sub_resource type="StandardMaterial3D" id="Mat_stone"]
+albedo_color = Color(0.5, 0.5, 0.48, 1)
+roughness = 0.95
+
+[sub_resource type="CylinderMesh" id="Mesh_pillar"]
+material = SubResource("Mat_stone")
+top_radius = 0.6
+bottom_radius = 0.7
+height = 3.0
+
+[sub_resource type="CylinderShape3D" id="Shape_pillar"]
+height = 3.0
+radius = 0.7
+
+[sub_resource type="BoxShape3D" id="Shape_wall"]
+size = Vector3(60, 4, 1)
+
+[node name="TestArena" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env_main")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, -0.383022, 0.321394, 0, 0.642788, 0.766044, -0.5, -0.663414, 0.556670, 0, 10, 0)
+light_color = Color(1, 0.95, 0.85, 1)
+light_energy = 1.2
+shadow_enabled = true
+directional_shadow_max_distance = 40.0
+
+[node name="Ground" type="StaticBody3D" parent="."]
+
+[node name="Mesh" type="MeshInstance3D" parent="Ground"]
+mesh = SubResource("Mesh_ground")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Ground"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+shape = SubResource("Shape_ground")
+
+[node name="Walls" type="StaticBody3D" parent="."]
+
+[node name="North" type="CollisionShape3D" parent="Walls"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, -30)
+shape = SubResource("Shape_wall")
+
+[node name="South" type="CollisionShape3D" parent="Walls"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 30)
+shape = SubResource("Shape_wall")
+
+[node name="West" type="CollisionShape3D" parent="Walls"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -30, 2, 0)
+shape = SubResource("Shape_wall")
+
+[node name="East" type="CollisionShape3D" parent="Walls"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 30, 2, 0)
+shape = SubResource("Shape_wall")
+
+[node name="Crate1" type="StaticBody3D" parent="."]
+transform = Transform3D(0.92, 0, 0.39, 0, 1, 0, -0.39, 0, 0.92, -5, 0.5, 2)
+
+[node name="Mesh" type="MeshInstance3D" parent="Crate1"]
+mesh = SubResource("Mesh_crate")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Crate1"]
+shape = SubResource("Shape_crate")
+
+[node name="Crate2" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.2, 0.5, 2.6)
+
+[node name="Mesh" type="MeshInstance3D" parent="Crate2"]
+mesh = SubResource("Mesh_crate")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Crate2"]
+shape = SubResource("Shape_crate")
+
+[node name="Pillar1" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 1.5, -5)
+
+[node name="Mesh" type="MeshInstance3D" parent="Pillar1"]
+mesh = SubResource("Mesh_pillar")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Pillar1"]
+shape = SubResource("Shape_pillar")
+
+[node name="Pillar2" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7, 1.5, -6)
+
+[node name="Mesh" type="MeshInstance3D" parent="Pillar2"]
+mesh = SubResource("Mesh_pillar")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Pillar2"]
+shape = SubResource("Shape_pillar")
+
+[node name="Dummy1" parent="." instance=ExtResource("2_dummy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -4)
+
+[node name="Dummy2" parent="." instance=ExtResource("2_dummy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 0, -6)
+
+[node name="Dummy3" parent="." instance=ExtResource("2_dummy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 0, -7)
+
+[node name="Player" parent="." node_paths=PackedStringArray("camera") instance=ExtResource("1_player")]
+camera = NodePath("../Camera")
+
+[node name="Camera" type="Camera3D" parent="." node_paths=PackedStringArray("target")]
+transform = Transform3D(1, 0, 0, 0, 0.563337, 0.826227, 0, -0.826227, 0.563337, 0, 11, 7.5)
+fov = 50.0
+script = ExtResource("3_camera")
+target = NodePath("../Player")

@@ -1,0 +1,41 @@
+[gd_scene load_steps=12 format=3]
+
+[ext_resource type="Script" path="res://scripts/player/player.gd" id="1_player"]
+[ext_resource type="Script" path="res://scripts/characters/character_model.gd" id="2_model"]
+[ext_resource type="PackedScene" path="res://assets/characters/outfits/Male_Ranger.gltf" id="3_outfit"]
+[ext_resource type="PackedScene" path="res://assets/characters/heads/Head_Male.gltf" id="4_head"]
+[ext_resource type="PackedScene" path="res://assets/characters/hair/Hair_Buzzed.gltf" id="5_hair"]
+[ext_resource type="PackedScene" path="res://assets/characters/hair/Hair_Beard.gltf" id="6_beard"]
+[ext_resource type="Script" path="res://scripts/combat/hitbox.gd" id="7_hitbox"]
+[ext_resource type="PackedScene" path="res://scenes/weapons/sword.tscn" id="8_sword"]
+[ext_resource type="PackedScene" path="res://scenes/combat/bomb.tscn" id="9_bomb"]
+
+[sub_resource type="CapsuleShape3D" id="Shape_body"]
+radius = 0.35
+height = 1.8
+
+[sub_resource type="BoxShape3D" id="Shape_attack"]
+size = Vector3(1.8, 1.4, 1.6)
+
+[node name="Player" type="CharacterBody3D" groups=["player"]]
+collision_layer = 2
+collision_mask = 5
+script = ExtResource("1_player")
+sword_scene = ExtResource("8_sword")
+bomb_scene = ExtResource("9_bomb")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+shape = SubResource("Shape_body")
+
+[node name="Model" type="Node3D" parent="."]
+script = ExtResource("2_model")
+outfit = ExtResource("3_outfit")
+parts = Array[PackedScene]([ExtResource("4_head"), ExtResource("5_hair"), ExtResource("6_beard")])
+
+[node name="AttackArea" type="Area3D" parent="Model"]
+script = ExtResource("7_hitbox")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Model/AttackArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0.9)
+shape = SubResource("Shape_attack")

@@ -1,0 +1,46 @@
+[gd_scene load_steps=7 format=3]
+
+[sub_resource type="StandardMaterial3D" id="Mat_steel"]
+albedo_color = Color(0.78, 0.8, 0.84, 1)
+metallic = 0.9
+roughness = 0.25
+
+[sub_resource type="StandardMaterial3D" id="Mat_leather"]
+albedo_color = Color(0.25, 0.15, 0.08, 1)
+roughness = 0.8
+
+[sub_resource type="BoxMesh" id="Mesh_blade"]
+material = SubResource("Mat_steel")
+size = Vector3(0.05, 0.85, 0.012)
+
+[sub_resource type="BoxMesh" id="Mesh_guard"]
+material = SubResource("Mat_steel")
+size = Vector3(0.22, 0.03, 0.04)
+
+[sub_resource type="CylinderMesh" id="Mesh_grip"]
+material = SubResource("Mat_leather")
+top_radius = 0.018
+bottom_radius = 0.018
+height = 0.18
+
+[sub_resource type="SphereMesh" id="Mesh_pommel"]
+material = SubResource("Mat_steel")
+radius = 0.03
+height = 0.06
+
+[node name="Sword" type="Node3D"]
+
+[node name="Grip" type="MeshInstance3D" parent="."]
+mesh = SubResource("Mesh_grip")
+
+[node name="Pommel" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
+mesh = SubResource("Mesh_pommel")
+
+[node name="Guard" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 0)
+mesh = SubResource("Mesh_guard")
+
+[node name="Blade" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.535, 0)
+mesh = SubResource("Mesh_blade")
