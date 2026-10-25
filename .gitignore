@@ -1,0 +1,9 @@
+# Godot
+.godot/
+/android/
+export_presets.cfg
+*.translation
+
+# Система / редакторы
+.DS_Store
+*.tmp

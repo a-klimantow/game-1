@@ -1,0 +1,14 @@
+{
+  "godotTools.editorPath.godot4": "/home/kant/.local/bin/godot",
+  "files.exclude": {
+    "**/.godot": true,
+    "**/*.uid": true,
+    "**/*.import": true
+  },
+  "[gdscript]": {
+    "editor.insertSpaces": false,
+    "editor.tabSize": 4,
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "geequlim.godot-tools"
+  }
+}

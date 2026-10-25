@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Запустить игру",
+      "type": "godot",
+      "request": "launch",
+      "project": "${workspaceFolder}"
+    },
+    {
+      "name": "Запустить текущую сцену",
+      "type": "godot",
+      "request": "launch",
+      "project": "${workspaceFolder}",
+      "scene": "current"
+    }
+  ]
+}
