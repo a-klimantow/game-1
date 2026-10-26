@@ -8,7 +8,8 @@ extends CharacterBody3D
 ## Управление (клавиатура / геймпад Xbox): WASD / левый стик — движение
 ## (слабый наклон стика — шаг), Shift / B (удерживать) — спринт, Пробел / A — кувырок,
 ## ЛКМ / X — удар (удерживать — заряженный сильный), RT — сильный удар сразу,
-## ПКМ / LT, LB (удерживать) — блок, Q / RB — бомба, E / Y — подобрать,
+## ПКМ / LT (удерживать) — блок, F / колесо / LB — контратака (когда над врагом «!»),
+## Q / RB — бомба, E / Y — подобрать,
 ## удерживать E / Y — выбросить щит.
 ## С мышью удары и броски летят в курсор, с геймпадом — по правому стику
 ## (или по направлению движения) с мягким автонаведением на ближайшего врага.
@@ -16,7 +17,7 @@ extends CharacterBody3D
 signal weapon_changed(weapon: WeaponData)
 signal shield_changed(shield: ShieldData, durability: int)
 
-enum State { NORMAL, ATTACK, CHARGE, BLOCK, ROLL, THROW, HIT, DEAD }
+enum State { NORMAL, ATTACK, CHARGE, BLOCK, COUNTER, ROLL, THROW, HIT, DEAD }
 
 const ANIM_IDLE: StringName = &"Idle"
 const ANIM_WALK: StringName = &"Walk"
@@ -27,6 +28,7 @@ const ANIM_THROW: StringName = &"OverhandThrow"
 const ANIM_HIT: StringName = &"Hit_Chest"
 const ANIM_DEATH: StringName = &"Death01"
 const ANIM_SHIELD_BREAK: StringName = &"Idle_Shield_Break"
+const ANIM_DEFLECT: StringName = &"Sword_Block"
 
 # Скорость тела внутри анимаций, м/с (измерено по root motion из UAL1_Standard_RM).
 # Делим на неё реальную скорость, чтобы ноги не скользили по земле.
@@ -53,6 +55,17 @@ const FULL_CHARGE_TIME: float = 1.0
 ## Полный заряд добавляет к урону и отбросу эту долю.
 const CHARGE_BONUS: float = 0.5
 const CHARGE_COLOR := Color(1.0, 0.75, 0.3, 0.5)
+
+## Контратака: дальность поиска врага, длительность отведения удара перед ответом,
+## длительность и перезарядка промаха, замедление времени при успехе.
+const COUNTER_RANGE: float = 2.5
+const COUNTER_DEFLECT_TIME: float = 0.2
+const COUNTER_WHIFF_TIME: float = 0.4
+const COUNTER_COOLDOWN: float = 0.6
+const COUNTER_SLOWMO_SCALE: float = 0.3
+const COUNTER_SLOWMO_TIME: float = 0.3
+## Номер «удара серии» для ответного удара контратаки (у сильного удара -1).
+const RIPOSTE_INDEX: int = -2
 
 const THROW_SPEED: float = 1.2
 ## Момент выпуска бомбы, в секундах анимации броска.
@@ -124,6 +137,8 @@ var _stun_time: float = HIT_STUN_TIME
 var _interact_pending: bool = false
 var _interact_hold_time: float = 0.0
 var _shield_node: Node3D
+var _counter_success: bool = false
+var _counter_cooldown_left: float = 0.0
 var _roll_dir: Vector3 = Vector3.ZERO
 var _roll_cooldown_left: float = 0.0
 var _combat_time_left: float = 0.0
@@ -203,18 +218,24 @@ func is_blocking() -> bool:
 	return state == State.BLOCK
 
 
-## Во время кувырка герой ненадолго неуязвим.
+## Неуязвим: в начале кувырка и во время удачной контратаки (до конца ответного удара).
 func is_invulnerable() -> bool:
-	if state != State.ROLL:
-		return false
-	var progress := _roll_progress()
-	return progress >= ROLL_IFRAMES.x and progress <= ROLL_IFRAMES.y
+	match state:
+		State.ROLL:
+			var progress := _roll_progress()
+			return progress >= ROLL_IFRAMES.x and progress <= ROLL_IFRAMES.y
+		State.COUNTER:
+			return _counter_success
+		State.ATTACK:
+			return _combo_index == RIPOSTE_INDEX
+	return false
 
 
 func _physics_process(delta: float) -> void:
 	_state_time += delta
 	_roll_cooldown_left = maxf(_roll_cooldown_left - delta, 0.0)
 	_combat_time_left = maxf(_combat_time_left - delta, 0.0)
+	_counter_cooldown_left = maxf(_counter_cooldown_left - delta, 0.0)
 
 	match state:
 		State.NORMAL:
@@ -225,6 +246,8 @@ func _physics_process(delta: float) -> void:
 			_update_charge(delta)
 		State.BLOCK:
 			_update_block(delta)
+		State.COUNTER:
+			_update_counter(delta)
 		State.ROLL:
 			_update_roll(delta)
 		State.THROW:
@@ -261,6 +284,8 @@ func _update_normal(delta: float) -> void:
 	_update_locomotion_animation()
 
 	if _update_attack_button(delta):
+		return
+	if _try_counter():
 		return
 	if Input.is_action_just_pressed(&"heavy_attack"):
 		_start_heavy(false)
@@ -458,7 +483,7 @@ func _update_block(delta: float) -> void:
 	var block := _block_data()
 	_accelerate(_input_direction() * block.move_speed, delta)
 	_face(_aim_direction(), delta, turn_speed)
-	if _try_roll():
+	if _try_roll() or _try_counter():
 		return
 	if _block_reaction_left > 0.0:
 		_block_reaction_left -= delta
@@ -507,6 +532,71 @@ func _break_shield() -> void:
 	_change_state(State.HIT)
 	_stun_time = SHIELD_BREAK_STUN_TIME
 	model.play(ANIM_SHIELD_BREAK, 0.05, 1.0, true)
+
+
+# --- Контратака --------------------------------------------------------------
+
+
+## Нажата контратака: если рядом враг в замахе — отводим удар и бьём в ответ,
+## иначе — промах с короткой перезарядкой.
+func _try_counter() -> bool:
+	if not Input.is_action_just_pressed(&"counter") or _counter_cooldown_left > 0.0:
+		return false
+	_attack_pending = false
+	_combat_time_left = COMBAT_IDLE_TIME
+	var target := _find_counter_target()
+	_change_state(State.COUNTER)
+	_counter_success = target != null
+	if target:
+		_face_instant(target.global_position - global_position)
+		target.receive_counter(global_position)
+		model.play(ANIM_DEFLECT, 0.02, 2.5, true)
+		model.flash(Color(1.0, 0.95, 0.7, 0.7), 0.25)
+		_shake_camera(0.3)
+		_vibrate(0.6, 0.4, 0.15)
+		_slow_motion()
+	else:
+		_counter_cooldown_left = COUNTER_COOLDOWN
+		model.play(ANIM_DEFLECT, 0.05, 1.5, true)
+	return true
+
+
+func _update_counter(delta: float) -> void:
+	_accelerate(Vector3.ZERO, delta)
+	if _counter_success and _state_time >= COUNTER_DEFLECT_TIME:
+		var riposte := weapon.counter_attack if weapon and weapon.counter_attack else null
+		if riposte == null:
+			riposte = weapon.heavy_attack if weapon else null
+		if riposte == null:
+			_change_state(State.NORMAL)
+			return
+		_combo_index = RIPOSTE_INDEX
+		_begin_attack(riposte, 1.0)
+		model.play(riposte.animation, 0.05, riposte.anim_speed, true)
+	elif not _counter_success and _state_time >= COUNTER_WHIFF_TIME:
+		_change_state(State.NORMAL)
+
+
+## Ближайший враг рядом, которого можно контратаковать.
+func _find_counter_target() -> Enemy:
+	var best: Enemy = null
+	var best_distance := COUNTER_RANGE
+	for node: Node in get_tree().get_nodes_in_group(&"enemies"):
+		var enemy := node as Enemy
+		if enemy == null or not enemy.is_counterable():
+			continue
+		var distance := enemy.global_position.distance_to(global_position)
+		if distance <= best_distance:
+			best = enemy
+			best_distance = distance
+	return best
+
+
+## Короткое замедление времени — момент удачной контратаки.
+func _slow_motion() -> void:
+	Engine.time_scale = COUNTER_SLOWMO_SCALE
+	await get_tree().create_timer(COUNTER_SLOWMO_TIME, true, false, true).timeout
+	Engine.time_scale = 1.0
 
 
 # --- Кувырок и бомба ---------------------------------------------------------

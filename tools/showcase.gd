@@ -29,6 +29,14 @@ const SCENARIOS: Dictionary = {
 		[9.6, &"throw", true],
 		[9.65, &"throw", false],
 	],
+	# Промах контратакой без замаха, потом контратаки по каждому замаху (автопилот жмёт сам).
+	"counter":
+	[
+		[0.2, &"move_right", true],
+		[1.3, &"move_right", false],
+		[1.6, &"counter", true],
+		[1.65, &"counter", false],
+	],
 	# Подобрать щит, блокировать до поломки, взять второй щит, выбросить его.
 	"shield":
 	[
@@ -103,18 +111,23 @@ const SCENARIOS: Dictionary = {
 	],
 }
 const DURATION: float = 18.5
+## В этих сценариях автопилот сам жмёт контратаку, как только враг рядом становится уязвим.
+const AUTO_COUNTER_SCENARIOS: Array[String] = ["counter"]
 
 var _timeline: Array = []
 var _time: float = 0.0
 var _next: int = 0
 var _player: Player
 var _log_timer: float = 0.0
+var _auto_counter: bool = false
+var _counter_held: bool = false
 
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
 	var scenario: String = args[0] if args.size() > 0 else "movement"
 	_timeline = SCENARIOS.get(scenario, SCENARIOS["movement"])
+	_auto_counter = scenario in AUTO_COUNTER_SCENARIOS
 	print("Сценарий: ", scenario)
 	var arena := ARENA.instantiate()
 	add_child(arena)
@@ -139,6 +152,8 @@ func _physics_process(delta: float) -> void:
 		else:
 			Input.action_release(action)
 		_next += 1
+	if _auto_counter:
+		_press_counter_when_possible()
 	_log_timer -= delta
 	if _log_timer <= 0.0:
 		_log_timer = 0.25
@@ -204,3 +219,20 @@ func _nearest_possessed() -> Possessed:
 			best = enemy
 			best_distance = distance
 	return best
+
+
+func _press_counter_when_possible() -> void:
+	if _counter_held:
+		Input.action_release(&"counter")
+		_counter_held = false
+		return
+	var enemy := _nearest_possessed()
+	if enemy == null or not enemy.is_counterable():
+		return
+	if enemy.global_position.distance_to(_player.global_position) > Player.COUNTER_RANGE:
+		return
+	if _player.state != Player.State.NORMAL and _player.state != Player.State.BLOCK:
+		return
+	print("        >> автопилот: контратака!")
+	Input.action_press(&"counter")
+	_counter_held = true

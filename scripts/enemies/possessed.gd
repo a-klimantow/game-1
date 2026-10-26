@@ -1,10 +1,11 @@
 class_name Possessed
-extends CharacterBody3D
+extends Enemy
 ## «Одержимый» — крестьянин, задетый аномалией. Бредёт к герою, замахивается
 ## (наливается красным — это предупреждение) и бьёт двумя взмахами.
-## После удара открыт для контратаки. Попадания прерывают замах, но не сам взмах.
+## После удара открыт для ответа. Попадания прерывают замах, но не сам взмах.
+## Во время замаха и взмахов его можно контратаковать — тогда он надолго оглушён.
 
-enum State { IDLE, CHASE, ATTACK, RECOVER, STAGGER, DEAD }
+enum State { IDLE, CHASE, ATTACK, RECOVER, STAGGER, COUNTERED, DEAD }
 
 const ANIM_IDLE: StringName = &"Zombie_Idle"
 const ANIM_WALK: StringName = &"Zombie_Walk_Fwd"
@@ -17,6 +18,8 @@ const ANIM_DEATH: StringName = &"Death01"
 const WALK_ANIM_SPEED: float = 1.05
 ## Окна удара в Zombie_Scratch (доли анимации), посчитаны по траектории кисти.
 const STRIKE_WINDOWS: Array[Vector2] = [Vector2(0.3, 0.44), Vector2(0.56, 0.7)]
+## Окно контратаки (доли анимации удара): от начала замаха до конца второго взмаха.
+const COUNTER_WINDOW := Vector2(0.1, 0.7)
 const WARNING_COLOR := Color(1.0, 0.1, 0.05, 0.55)
 const HIT_COLOR := Color(1.0, 1.0, 1.0, 0.6)
 ## Одержимые не толпятся в одной точке: отталкиваются друг от друга на этом расстоянии.
@@ -42,6 +45,8 @@ const SEPARATION_RADIUS: float = 1.3
 @export var heavy_stagger_time: float = 0.8
 ## Удар с таким отбросом и сильнее считается тяжёлым.
 @export var heavy_knockback: float = 6.0
+## Сколько секунд враг оглушён после контратаки героя.
+@export var countered_time: float = 1.3
 @export var respawn_time: float = 5.0
 
 var state: State = State.IDLE
@@ -66,6 +71,7 @@ func _ready() -> void:
 	hurtbox.hit_received.connect(_on_hit_received)
 	health.died.connect(_on_died)
 	model.play(ANIM_IDLE, 0.0)
+	_setup_counter_hint(2.9)
 
 
 func _physics_process(delta: float) -> void:
@@ -82,11 +88,12 @@ func _physics_process(delta: float) -> void:
 			_update_attack(delta)
 		State.RECOVER:
 			_update_recover(delta)
-		State.STAGGER:
+		State.STAGGER, State.COUNTERED:
 			_update_stagger(delta)
 		State.DEAD:
 			_update_dead(delta)
 
+	_update_counter_hint(_target)
 	if is_on_floor():
 		velocity.y = 0.0
 	else:
@@ -155,6 +162,28 @@ func is_striking() -> bool:
 	return false
 
 
+func is_counterable() -> bool:
+	if state != State.ATTACK:
+		return false
+	var progress := _attack_progress()
+	return progress >= COUNTER_WINDOW.x and progress <= COUNTER_WINDOW.y
+
+
+## Герой отвёл удар: атака прерывается, враг отшатывается и надолго открыт.
+func receive_counter(from_position: Vector3) -> void:
+	if state == State.DEAD:
+		return
+	var away := global_position - from_position
+	away.y = 0.0
+	away = away.normalized() if away.length() > 0.01 else -_facing()
+	_change_state(State.COUNTERED)
+	_stagger_time = countered_time
+	_face_instant(-away)
+	_set_horizontal_velocity(away * 2.5)
+	model.flash(HIT_COLOR, 0.3)
+	model.play(ANIM_HIT_HEAVY, 0.05, 1.0, true)
+
+
 func _attack_progress() -> float:
 	return _state_time * attack_anim_speed / model.get_animation_length(ANIM_ATTACK)
 
@@ -204,6 +233,10 @@ func _on_hit_received(damage: int, source_position: Vector3, knockback: float) -
 		return
 
 	var heavy := knockback >= heavy_knockback
+	# После контратаки лёгкие удары не сокращают его оглушение.
+	if state == State.COUNTERED and not heavy:
+		model.flash(HIT_COLOR, 0.15)
+		return
 	var away := global_position - source_position
 	away.y = 0.0
 	away = away.normalized() if away.length() > 0.01 else -_facing()

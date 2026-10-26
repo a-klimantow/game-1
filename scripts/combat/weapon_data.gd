@@ -12,6 +12,8 @@ extends Resource
 @export_group("Удары")
 @export var light_combo: Array[AttackData] = []
 @export var heavy_attack: AttackData
+## Ответный удар после удачной контратаки (пусто — используется сильный удар).
+@export var counter_attack: AttackData
 ## Боевая стойка после удара.
 @export var combat_idle: StringName = &"Sword_Idle"
 
