@@ -1,29 +1,28 @@
 class_name Player
 extends CharacterBody3D
-## Серёга: шаг/бег/спринт, кувырок, комбо мечом, блок и бросок пороховой бомбы.
-## Получает урон: блок спереди почти гасит удар, кувырок даёт неуязвимость.
+## Серёга: шаг/бег/спринт, кувырок, удары оружием (лёгкая серия и заряжаемый сильный удар),
+## блок, бросок пороховой бомбы и подбор оружия. Удары и блок берутся из WeaponData.
+## Получает урон: блок спереди гасит удар, кувырок даёт неуязвимость.
 ##
 ## Управление (клавиатура / геймпад Xbox): WASD / левый стик — движение
 ## (слабый наклон стика — шаг), Shift / B (удерживать) — спринт, Пробел / A — кувырок,
-## ЛКМ / X, RB — удар, ПКМ / LT, LB (удерживать) — блок, Q / Y — бомба.
+## ЛКМ / X — удар (удерживать — заряженный сильный), RT — сильный удар сразу,
+## ПКМ / LT, LB (удерживать) — блок, Q / RB — бомба, E / Y — подобрать оружие.
 ## С мышью удары и броски летят в курсор, с геймпадом — по правому стику
 ## (или по направлению движения) с мягким автонаведением на ближайшего врага.
 
-enum State { NORMAL, ATTACK, BLOCK, ROLL, THROW, HIT, DEAD }
+signal weapon_changed(weapon: WeaponData)
+
+enum State { NORMAL, ATTACK, CHARGE, BLOCK, ROLL, THROW, HIT, DEAD }
 
 const ANIM_IDLE: StringName = &"Idle"
-const ANIM_COMBAT_IDLE: StringName = &"Sword_Idle"
 const ANIM_WALK: StringName = &"Walk"
 const ANIM_JOG: StringName = &"Jog_Fwd"
 const ANIM_SPRINT: StringName = &"Sprint"
 const ANIM_ROLL: StringName = &"Roll"
-const ANIM_BLOCK: StringName = &"Sword_Block"
 const ANIM_THROW: StringName = &"OverhandThrow"
 const ANIM_HIT: StringName = &"Hit_Chest"
 const ANIM_DEATH: StringName = &"Death01"
-const COMBO: Array[StringName] = [&"Sword_Regular_A", &"Sword_Regular_B", &"Sword_Regular_C"]
-const COMBO_DAMAGE: Array[int] = [10, 12, 25]
-const COMBO_KNOCKBACK: Array[float] = [3.0, 3.0, 7.0]
 
 # Скорость тела внутри анимаций, м/с (измерено по root motion из UAL1_Standard_RM).
 # Делим на неё реальную скорость, чтобы ноги не скользили по земле.
@@ -43,25 +42,25 @@ const STICK_WALK_THRESHOLD: float = 0.55
 ## Сколько секунд после боя герой держит боевую стойку вместо обычной.
 const COMBAT_IDLE_TIME: float = 4.0
 
-## Доли анимации удара, когда меч наносит урон (от, до).
-const HIT_WINDOW := Vector2(0.25, 0.65)
-## С какой доли анимации удара можно перейти к следующему удару комбо.
-const COMBO_WINDOW: float = 0.5
-## Через сколько секунд блок «замирает» в защитной стойке.
-const BLOCK_HOLD_TIME: float = 0.35
+## Кнопку удара держат дольше этого — начинается заряд сильного удара.
+const CHARGE_THRESHOLD: float = 0.25
+## За сколько секунд удар заряжается полностью.
+const FULL_CHARGE_TIME: float = 1.0
+## Полный заряд добавляет к урону и отбросу эту долю.
+const CHARGE_BONUS: float = 0.5
+const CHARGE_COLOR := Color(1.0, 0.75, 0.3, 0.5)
+
 const THROW_SPEED: float = 1.2
 ## Момент выпуска бомбы, в секундах анимации броска.
 const THROW_RELEASE_TIME: float = 0.55
 
-## Блок спасает от ударов спереди: косинус половины угла защиты (≈ 70°) и доля урона.
-const BLOCK_MIN_DOT: float = 0.34
-const BLOCK_DAMAGE_FACTOR: float = 0.2
 ## Сколько секунд герой оглушён после пропущенного удара.
 const HIT_STUN_TIME: float = 0.4
 ## Через сколько секунд после смерти герой возрождается.
 const RESPAWN_TIME: float = 3.0
-## Длительность «заморозки» мира при попадании мечом — для веса удара.
+## Длительность «заморозки» мира при попадании — для веса удара (сильный — дольше).
 const HITSTOP_TIME: float = 0.05
+const HEAVY_HITSTOP_TIME: float = 0.1
 
 ## Автонаведение для геймпада: дальность и ширина конуса (косинус угла ≈ 40°).
 const AUTO_AIM_RANGE: float = 6.0
@@ -86,20 +85,31 @@ const GAMEPAD_THROW_DISTANCE: float = 7.0
 @export var roll_cooldown: float = 0.25
 
 @export_group("Бой")
+@export var starting_weapon: WeaponData
 @export var throw_range: float = 12.0
 
 @export_group("Ссылки")
 @export var camera: TopDownCamera
-@export var sword_scene: PackedScene
 @export var bomb_scene: PackedScene
 
 var state: State = State.NORMAL
+var weapon: WeaponData
 ## Для автотестов и катсцен: если задано, герой целится сюда, а не в курсор.
 var aim_point_override: Vector3 = Vector3.INF
+## Оружие на земле, которое сейчас можно подобрать (его выставляет WeaponPickup).
+var pickup_candidate: WeaponPickup
 
 var _state_time: float = 0.0
-var _combo_index: int = 0
+var _attack: AttackData
+## Номер удара в лёгкой серии; -1 — сильный удар.
+var _combo_index: int = -1
 var _combo_queued: bool = false
+var _attack_multiplier: float = 1.0
+## Кнопку удара нажали в обычном состоянии: ждём — отпустят (лёгкий) или задержат (заряд).
+var _attack_pending: bool = false
+var _attack_hold_time: float = 0.0
+var _charge: float = 0.0
+var _block_reaction_left: float = 0.0
 var _roll_dir: Vector3 = Vector3.ZERO
 var _roll_cooldown_left: float = 0.0
 var _combat_time_left: float = 0.0
@@ -107,28 +117,51 @@ var _bomb_thrown: bool = false
 var _throw_target: Vector3 = Vector3.ZERO
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var _spawn_transform: Transform3D
+var _weapon_nodes: Array[Node] = []
+var _attack_box: BoxShape3D
 
 @onready var model: CharacterModel = $Model
 @onready var attack_area: Hitbox = $Model/AttackArea
+@onready var attack_shape: CollisionShape3D = $Model/AttackArea/CollisionShape3D
 @onready var hurtbox: Hurtbox = $Hurtbox
 @onready var health: Health = $Health
 
 
 func _ready() -> void:
 	_spawn_transform = global_transform
-	if sword_scene:
-		model.attach_to_bone(sword_scene.instantiate() as Node3D, &"hand_r")
+	# Своя копия формы: размер зоны удара меняется под каждый удар.
+	_attack_box = (attack_shape.shape as BoxShape3D).duplicate() as BoxShape3D
+	attack_shape.shape = _attack_box
+	if starting_weapon:
+		equip(starting_weapon)
 	model.play(ANIM_IDLE, 0.0)
 	hurtbox.hit_received.connect(_on_hit_received)
 	health.died.connect(_on_died)
 	attack_area.hit_landed.connect(_on_attack_landed)
 
 
+## Берёт оружие в руки: вешает модели на кости и подставляет удары и блок.
+func equip(new_weapon: WeaponData) -> void:
+	for node: Node in _weapon_nodes:
+		node.queue_free()
+	_weapon_nodes.clear()
+	weapon = new_weapon
+	if weapon.main_hand:
+		_weapon_nodes.append(
+			model.attach_to_bone(weapon.main_hand.instantiate() as Node3D, &"hand_r")
+		)
+	if weapon.off_hand:
+		_weapon_nodes.append(
+			model.attach_to_bone(weapon.off_hand.instantiate() as Node3D, &"hand_l")
+		)
+	weapon_changed.emit(weapon)
+
+
 func is_blocking() -> bool:
 	return state == State.BLOCK
 
 
-## Во время кувырка герой ненадолго неуязвим (пригодится, когда враги начнут бить).
+## Во время кувырка герой ненадолго неуязвим.
 func is_invulnerable() -> bool:
 	if state != State.ROLL:
 		return false
@@ -146,6 +179,8 @@ func _physics_process(delta: float) -> void:
 			_update_normal(delta)
 		State.ATTACK:
 			_update_attack(delta)
+		State.CHARGE:
+			_update_charge(delta)
 		State.BLOCK:
 			_update_block(delta)
 		State.ROLL:
@@ -164,7 +199,7 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 
 
-# --- Состояния ---------------------------------------------------------------
+# --- Движение ----------------------------------------------------------------
 
 
 func _update_normal(delta: float) -> void:
@@ -183,16 +218,18 @@ func _update_normal(delta: float) -> void:
 	_accelerate(dir.normalized() * target_speed, delta)
 	_update_locomotion_animation()
 
-	if Input.is_action_just_pressed(&"attack"):
-		_start_attack(0)
+	if _update_attack_button(delta):
+		return
+	if Input.is_action_just_pressed(&"heavy_attack"):
+		_start_heavy(false)
 	elif Input.is_action_pressed(&"block"):
-		_combat_time_left = COMBAT_IDLE_TIME
-		_change_state(State.BLOCK)
-		model.play(ANIM_BLOCK, 0.1, 1.0, true)
+		_start_block()
 	elif _try_roll():
 		pass
 	elif Input.is_action_just_pressed(&"throw") and bomb_scene:
 		_start_throw()
+	elif Input.is_action_just_pressed(&"interact") and pickup_candidate:
+		pickup_candidate.take(self)
 
 
 ## Анимация ходьбы по реальной скорости: стойка → шаг → бег → спринт,
@@ -200,7 +237,8 @@ func _update_normal(delta: float) -> void:
 func _update_locomotion_animation() -> void:
 	var speed := Vector2(velocity.x, velocity.z).length()
 	if speed < 0.15:
-		model.play(ANIM_COMBAT_IDLE if _combat_time_left > 0.0 else ANIM_IDLE, 0.25)
+		var combat_idle := weapon.combat_idle if weapon else ANIM_IDLE
+		model.play(combat_idle if _combat_time_left > 0.0 else ANIM_IDLE, 0.25)
 		return
 	var anim := ANIM_WALK
 	var anim_speed := WALK_ANIM_SPEED
@@ -214,45 +252,164 @@ func _update_locomotion_animation() -> void:
 	model.set_playback_speed(clampf(speed / anim_speed, 0.5, 1.8))
 
 
-func _start_attack(index: int) -> void:
-	_change_state(State.ATTACK)
+# --- Удары -------------------------------------------------------------------
+
+
+## Короткое нажатие — лёгкий удар, удержание — заряд сильного. Возвращает true,
+## если начался удар или заряд.
+func _update_attack_button(delta: float) -> bool:
+	if weapon == null:
+		return false
+	if Input.is_action_just_pressed(&"attack"):
+		_attack_pending = true
+		_attack_hold_time = 0.0
+	if not _attack_pending:
+		return false
+	if Input.is_action_pressed(&"attack"):
+		_attack_hold_time += delta
+		if _attack_hold_time >= CHARGE_THRESHOLD and weapon.heavy_attack:
+			_attack_pending = false
+			_start_charge()
+			return true
+		return false
+	_attack_pending = false
+	_start_light(0)
+	return true
+
+
+func _start_light(index: int) -> void:
+	if weapon.light_combo.is_empty():
+		return
 	_combo_index = index
+	_begin_attack(weapon.light_combo[index], 1.0)
+	_face_instant(_aim_direction())
+	model.play(_attack.animation, 0.08, _attack.anim_speed, true)
+
+
+## Сильный удар. charged = true — после заряда (анимация продолжается с позы замаха).
+func _start_heavy(charged: bool) -> void:
+	if weapon == null or weapon.heavy_attack == null:
+		return
+	_combo_index = -1
+	_begin_attack(weapon.heavy_attack, 1.0 + CHARGE_BONUS * _charge if charged else 1.0)
+	model.clear_flash()
+	if charged:
+		# Продолжаем с позы замаха, на которой анимация замерла.
+		_state_time = _attack.charge_pose * _attack.duration(model)
+		model.play(_attack.animation)
+		model.flash(Color(1.0, 0.95, 0.8, 0.6), 0.15)
+	else:
+		_face_instant(_aim_direction())
+		model.play(_attack.animation, 0.08, _attack.anim_speed, true)
+
+
+func _begin_attack(attack: AttackData, multiplier: float) -> void:
+	_change_state(State.ATTACK)
+	_attack = attack
+	_attack_multiplier = multiplier
 	_combo_queued = false
 	_combat_time_left = COMBAT_IDLE_TIME
-	attack_area.active = false
-	attack_area.damage = COMBO_DAMAGE[index]
-	attack_area.knockback = COMBO_KNOCKBACK[index]
-	_face_instant(_aim_direction())
-	model.play(COMBO[index], 0.08, 1.0, true)
+	attack_area.damage = roundi(attack.damage * multiplier)
+	attack_area.knockback = attack.knockback * multiplier
+	_attack_box.size = attack.hitbox_size
+	attack_shape.position = attack.hitbox_offset
 
 
 func _update_attack(delta: float) -> void:
-	_accelerate(Vector3.ZERO, delta)
-	var progress := _state_time / model.get_animation_length(COMBO[_combo_index])
-	attack_area.active = progress >= HIT_WINDOW.x and progress <= HIT_WINDOW.y
+	var length := _attack.duration(model)
+	var progress := _state_time / length
+	attack_area.active = _attack.is_in_hit_window(progress)
 
-	# После удара (когда меч уже не бьёт) можно уйти кувырком.
-	if progress > HIT_WINDOW.y and _try_roll():
+	var lunge := _attack.lunge_window
+	if _attack.lunge_distance > 0.0 and progress >= lunge.x and progress <= lunge.y:
+		var lunge_speed := _attack.lunge_distance / maxf((lunge.y - lunge.x) * length, 0.01)
+		_set_horizontal_velocity(_facing() * lunge_speed)
+	else:
+		_accelerate(Vector3.ZERO, delta)
+
+	if progress >= _attack.cancel_from and _try_roll():
 		return
 	if Input.is_action_just_pressed(&"attack"):
 		_combo_queued = true
-	var has_next := _combo_index < COMBO.size() - 1
-	if _combo_queued and has_next and progress >= COMBO_WINDOW:
-		_start_attack(_combo_index + 1)
-	elif progress >= 1.0:
+	var in_combo := _combo_index >= 0
+	var has_next := in_combo and _combo_index < weapon.light_combo.size() - 1
+	if _combo_queued and has_next and progress >= _attack.combo_from:
+		_start_light(_combo_index + 1)
+	elif progress >= _attack.end_at:
 		_change_state(State.NORMAL)
+		# Нажали во время последнего удара — серия начинается заново.
+		if _combo_queued:
+			_start_light(0)
+
+
+func _start_charge() -> void:
+	_change_state(State.CHARGE)
+	_charge = 0.0
+	_combat_time_left = COMBAT_IDLE_TIME
+	var heavy := weapon.heavy_attack
+	_face_instant(_aim_direction())
+	model.play(heavy.animation, 0.1, heavy.anim_speed, true)
+	model.flash(CHARGE_COLOR, FULL_CHARGE_TIME, true)
+
+
+func _update_charge(delta: float) -> void:
+	_accelerate(Vector3.ZERO, delta)
+	_face(_aim_direction(), delta, turn_speed * 0.5)
+	var heavy := weapon.heavy_attack
+	# Замах доходит до позы и замирает, пока держат кнопку.
+	if _state_time >= heavy.charge_pose * heavy.duration(model) and model.is_playing():
+		model.pause()
+	_charge = clampf(_state_time / FULL_CHARGE_TIME, 0.0, 1.0)
+	if _try_roll():
+		model.clear_flash()
+		return
+	if not Input.is_action_pressed(&"attack"):
+		_start_heavy(true)
+
+
+# --- Блок --------------------------------------------------------------------
+
+
+func _start_block() -> void:
+	_combat_time_left = COMBAT_IDLE_TIME
+	_block_reaction_left = 0.0
+	_change_state(State.BLOCK)
+	model.play(weapon.block_animation if weapon else &"Sword_Block", 0.1, 1.0, true)
 
 
 func _update_block(delta: float) -> void:
-	_accelerate(Vector3.ZERO, delta)
-	_face(_aim_direction(), delta, turn_speed)
 	_combat_time_left = COMBAT_IDLE_TIME
+	var move_speed := weapon.block_move_speed if weapon else 0.0
+	_accelerate(_input_direction() * move_speed, delta)
+	_face(_aim_direction(), delta, turn_speed)
 	if _try_roll():
 		return
-	if _state_time >= BLOCK_HOLD_TIME and model.is_playing():
-		model.pause()
+	if _block_reaction_left > 0.0:
+		_block_reaction_left -= delta
+		if _block_reaction_left <= 0.0:
+			model.play(weapon.block_animation, 0.15)
+	elif weapon and weapon.block_hold_time > 0.0:
+		if _state_time >= weapon.block_hold_time and model.is_playing():
+			model.pause()
 	if not Input.is_action_pressed(&"block"):
 		_change_state(State.NORMAL)
+
+
+## Удар пришёлся в блок: урон по доле оружия, отдача, вспышка.
+func _on_blocked(damage: int, away: Vector3, knockback: float) -> void:
+	var passed := ceili(damage * weapon.block_damage_factor)
+	if passed > 0:
+		health.damage(passed)
+	_set_horizontal_velocity(away * knockback * weapon.block_pushback)
+	model.flash(Color(0.6, 0.8, 1.0, 0.5), 0.2)
+	_shake_camera(0.25)
+	_vibrate(0.3, 0.0, 0.12)
+	if weapon.block_hit_animation != &"":
+		model.play(weapon.block_hit_animation, 0.05, 1.0, true)
+		_block_reaction_left = model.get_animation_length(weapon.block_hit_animation)
+
+
+# --- Кувырок и бомба ---------------------------------------------------------
 
 
 ## Начинает кувырок, если нажата кнопка и он не на перезарядке.
@@ -262,6 +419,7 @@ func _try_roll() -> bool:
 	var dir := _input_direction()
 	_roll_dir = dir.normalized() if dir != Vector3.ZERO else _facing()
 	_face_instant(_roll_dir)
+	_attack_pending = false
 	_change_state(State.ROLL)
 	model.play(ANIM_ROLL, 0.05, roll_anim_speed, true)
 	return true
@@ -323,14 +481,9 @@ func _on_hit_received(damage: int, source_position: Vector3, knockback: float) -
 	var from_attacker := source_position - global_position
 	from_attacker.y = 0.0
 	var away := -from_attacker.normalized() if from_attacker.length() > 0.01 else -_facing()
-	var blocked := state == State.BLOCK and _facing().dot(-away) >= BLOCK_MIN_DOT
-
-	if blocked:
-		health.damage(ceili(damage * BLOCK_DAMAGE_FACTOR))
-		_set_horizontal_velocity(away * knockback * 0.4)
-		model.flash(Color(0.6, 0.8, 1.0, 0.5), 0.2)
-		_shake_camera(0.25)
-		_vibrate(0.3, 0.0, 0.12)
+	var min_dot := weapon.block_min_dot if weapon else 0.34
+	if state == State.BLOCK and _facing().dot(-away) >= min_dot:
+		_on_blocked(damage, away, knockback)
 		return
 
 	health.damage(damage)
@@ -367,11 +520,15 @@ func _update_dead(delta: float) -> void:
 		model.play(ANIM_IDLE, 0.0)
 
 
-## Короткая заморозка мира при попадании мечом — удар ощущается весомее.
+## Короткая заморозка мира при попадании — удар ощущается весомее.
 func _on_attack_landed(_target: Hurtbox) -> void:
-	_vibrate(0.4, 0.2, 0.08)
+	var heavy := _combo_index < 0
+	_vibrate(0.4, 0.5 if heavy else 0.2, 0.12 if heavy else 0.08)
+	if heavy:
+		_shake_camera(0.35)
 	Engine.time_scale = 0.05
-	await get_tree().create_timer(HITSTOP_TIME, true, false, true).timeout
+	var pause := HEAVY_HITSTOP_TIME if heavy else HITSTOP_TIME
+	await get_tree().create_timer(pause, true, false, true).timeout
 	Engine.time_scale = 1.0
 
 

@@ -1,0 +1,56 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scripts/combat/weapon_data.gd" id="1_weapon"]
+[ext_resource type="Script" path="res://scripts/combat/attack_data.gd" id="2_attack"]
+[ext_resource type="PackedScene" path="res://scenes/weapons/sword.tscn" id="3_sword"]
+[ext_resource type="PackedScene" path="res://scenes/weapons/shield.tscn" id="4_shield"]
+
+[sub_resource type="Resource" id="Attack_a"]
+script = ExtResource("2_attack")
+animation = &"Sword_Regular_A"
+anim_speed = 1.1
+damage = 8
+knockback = 2.5
+hit_windows = Array[Vector2]([Vector2(0.48, 0.8)])
+combo_from = 0.7
+cancel_from = 0.8
+
+[sub_resource type="Resource" id="Attack_b"]
+script = ExtResource("2_attack")
+animation = &"Sword_Regular_B"
+anim_speed = 1.1
+damage = 9
+knockback = 3.0
+hit_windows = Array[Vector2]([Vector2(0.42, 0.72)])
+combo_from = 1.0
+cancel_from = 0.75
+
+[sub_resource type="Resource" id="Attack_bash"]
+script = ExtResource("2_attack")
+animation = &"Shield_Dash"
+damage = 10
+knockback = 9.0
+hit_windows = Array[Vector2]([Vector2(0.04, 0.24)])
+combo_from = 1.0
+cancel_from = 0.4
+end_at = 0.65
+charge_pose = 0.03
+lunge_distance = 2.2
+lunge_window = Vector2(0, 0.22)
+hitbox_size = Vector3(1.6, 1.6, 1.4)
+hitbox_offset = Vector3(0, 0.9, 0.8)
+
+[resource]
+script = ExtResource("1_weapon")
+display_name = "Меч и щит"
+main_hand = ExtResource("3_sword")
+off_hand = ExtResource("4_shield")
+light_combo = Array[ExtResource("2_attack")]([SubResource("Attack_a"), SubResource("Attack_b")])
+heavy_attack = SubResource("Attack_bash")
+block_animation = &"Idle_Shield"
+block_hold_time = 0.0
+block_hit_animation = &"Shield_OneShot"
+block_damage_factor = 0.0
+block_min_dot = 0.5
+block_move_speed = 1.6
+block_pushback = 0.25

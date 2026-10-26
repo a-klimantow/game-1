@@ -7,7 +7,7 @@
 [ext_resource type="PackedScene" path="res://assets/characters/hair/Hair_Buzzed.gltf" id="5_hair"]
 [ext_resource type="PackedScene" path="res://assets/characters/hair/Hair_Beard.gltf" id="6_beard"]
 [ext_resource type="Script" path="res://scripts/combat/hitbox.gd" id="7_hitbox"]
-[ext_resource type="PackedScene" path="res://scenes/weapons/sword.tscn" id="8_sword"]
+[ext_resource type="Resource" path="res://data/weapons/sword.tres" id="8_sword"]
 [ext_resource type="PackedScene" path="res://scenes/combat/bomb.tscn" id="9_bomb"]
 [ext_resource type="Script" path="res://scripts/combat/hurtbox.gd" id="10_hurtbox"]
 [ext_resource type="Script" path="res://scripts/combat/health.gd" id="11_health"]
@@ -27,7 +27,7 @@ size = Vector3(1.8, 1.4, 1.6)
 collision_layer = 2
 collision_mask = 5
 script = ExtResource("1_player")
-sword_scene = ExtResource("8_sword")
+starting_weapon = ExtResource("8_sword")
 bomb_scene = ExtResource("9_bomb")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]

@@ -1,0 +1,57 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scripts/combat/weapon_data.gd" id="1_weapon"]
+[ext_resource type="Script" path="res://scripts/combat/attack_data.gd" id="2_attack"]
+[ext_resource type="PackedScene" path="res://scenes/weapons/sword.tscn" id="3_sword"]
+
+[sub_resource type="Resource" id="Attack_a"]
+script = ExtResource("2_attack")
+animation = &"Sword_Regular_A"
+damage = 10
+knockback = 3.0
+hit_windows = Array[Vector2]([Vector2(0.48, 0.8)])
+combo_from = 0.7
+cancel_from = 0.8
+
+[sub_resource type="Resource" id="Attack_b"]
+script = ExtResource("2_attack")
+animation = &"Sword_Regular_B"
+damage = 12
+knockback = 3.0
+hit_windows = Array[Vector2]([Vector2(0.42, 0.72)])
+combo_from = 0.7
+cancel_from = 0.75
+
+[sub_resource type="Resource" id="Attack_c"]
+script = ExtResource("2_attack")
+animation = &"Sword_Regular_C"
+damage = 22
+knockback = 7.0
+hit_windows = Array[Vector2]([Vector2(0.28, 0.42)])
+combo_from = 1.0
+cancel_from = 0.5
+end_at = 0.75
+lunge_distance = 1.4
+lunge_window = Vector2(0, 0.4)
+
+[sub_resource type="Resource" id="Attack_heavy"]
+script = ExtResource("2_attack")
+animation = &"Sword_Attack"
+damage = 28
+knockback = 8.0
+hit_windows = Array[Vector2]([Vector2(0.24, 0.37)])
+combo_from = 1.0
+cancel_from = 0.6
+end_at = 0.8
+charge_pose = 0.2
+lunge_distance = 0.9
+lunge_window = Vector2(0.2, 0.35)
+hitbox_size = Vector3(2.2, 1.4, 2)
+hitbox_offset = Vector3(0, 0.9, 1.1)
+
+[resource]
+script = ExtResource("1_weapon")
+display_name = "Меч"
+main_hand = ExtResource("3_sword")
+light_combo = Array[ExtResource("2_attack")]([SubResource("Attack_a"), SubResource("Attack_b"), SubResource("Attack_c")])
+heavy_attack = SubResource("Attack_heavy")

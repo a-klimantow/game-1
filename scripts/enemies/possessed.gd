@@ -198,7 +198,8 @@ func _on_hit_received(damage: int, source_position: Vector3, knockback: float) -
 	)
 	if health.is_dead():
 		return
-	if is_striking():
+	# Во время взмаха лёгкие удары его не прерывают, а сильные — сбивают.
+	if is_striking() and knockback < heavy_knockback:
 		model.flash(HIT_COLOR, 0.15)
 		return
 

@@ -29,6 +29,40 @@ const SCENARIOS: Dictionary = {
 		[9.6, &"throw", true],
 		[9.65, &"throw", false],
 	],
+	# Заряженный удар мечом, лёгкая серия, подбор щита, блок щитом, удар щитом с рывком.
+	"weapons":
+	[
+		[0.2, &"move_right", true],
+		[1.3, &"move_right", false],
+		[2.2, &"attack", true],
+		[3.2, &"attack", false],
+		[6.0, &"attack", true],
+		[6.05, &"attack", false],
+		[6.3, &"attack", true],
+		[6.35, &"attack", false],
+		[6.7, &"attack", true],
+		[6.75, &"attack", false],
+		[8.5, &"move_left", true],
+		[8.9, &"interact", true],
+		[8.95, &"interact", false],
+		[9.1, &"interact", true],
+		[9.15, &"interact", false],
+		[9.3, &"interact", true],
+		[9.35, &"interact", false],
+		[9.5, &"move_left", false],
+		[9.7, &"interact", true],
+		[9.75, &"interact", false],
+		[9.9, &"block", true],
+		[13.0, &"block", false],
+		[13.2, &"heavy_attack", true],
+		[13.25, &"heavy_attack", false],
+		[14.5, &"attack", true],
+		[14.55, &"attack", false],
+		[14.8, &"attack", true],
+		[14.85, &"attack", false],
+		[16.2, &"heavy_attack", true],
+		[16.25, &"heavy_attack", false],
+	],
 	# Подойти к одержимым, пропустить удар, постоять в блоке, потом бить и кинуть бомбу.
 	"combat":
 	[
@@ -114,14 +148,18 @@ func _log_state() -> void:
 	var speed := Vector2(_player.velocity.x, _player.velocity.z).length()
 	var anim_player := _player.model.anim_player
 	var line := (
-		"%5.2fs  %-7s %3d hp  %-16s  v=%.1f%s"
+		"%5.2fs  %-10s %-6s %3d hp  %-16s  v=%.1f%s"
 		% [
 			_time,
+			_player.weapon.display_name if _player.weapon else "-",
 			Player.State.keys()[_player.state],
 			_player.health.current,
 			anim_player.current_animation,
 			speed,
-			" неуязвим" if _player.is_invulnerable() else "",
+			(
+				(" неуязвим" if _player.is_invulnerable() else "")
+				+ (" [рядом оружие]" if _player.pickup_candidate else "")
+			),
 		]
 	)
 	var enemy := _nearest_possessed()

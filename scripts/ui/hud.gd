@@ -9,12 +9,16 @@ extends CanvasLayer
 @onready var health_bar: ProgressBar = %HealthBar
 @onready var trail_bar: ProgressBar = %TrailBar
 @onready var health_text: Label = %HealthText
+@onready var weapon_label: Label = %WeaponLabel
 
 
 func _ready() -> void:
 	if player == null:
 		return
 	player.health.changed.connect(_on_health_changed)
+	player.weapon_changed.connect(_on_weapon_changed)
+	if player.weapon:
+		_on_weapon_changed(player.weapon)
 	_on_health_changed(player.health.current, player.health.max_health)
 	trail_bar.value = health_bar.value
 
@@ -33,3 +37,7 @@ func _on_health_changed(current: int, max_value: int) -> void:
 	if current > trail_bar.value:
 		trail_bar.value = current
 	health_text.text = "%d / %d" % [current, max_value]
+
+
+func _on_weapon_changed(weapon: WeaponData) -> void:
+	weapon_label.text = "Оружие: " + weapon.display_name

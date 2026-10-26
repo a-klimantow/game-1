@@ -1,0 +1,111 @@
+[gd_scene load_steps=12 format=3]
+
+[ext_resource type="Script" path="res://tools/anim_viewer.gd" id="1_viewer"]
+[ext_resource type="Script" path="res://scripts/characters/character_model.gd" id="2_model"]
+[ext_resource type="PackedScene" path="res://assets/characters/outfits/Male_Ranger.gltf" id="3_outfit"]
+[ext_resource type="PackedScene" path="res://assets/characters/heads/Head_Male.gltf" id="4_head"]
+[ext_resource type="PackedScene" path="res://assets/characters/hair/Hair_Buzzed.gltf" id="5_hair"]
+[ext_resource type="PackedScene" path="res://assets/characters/hair/Hair_Beard.gltf" id="6_beard"]
+
+[sub_resource type="ProceduralSkyMaterial" id="Sky_mat"]
+
+[sub_resource type="Sky" id="Sky_main"]
+sky_material = SubResource("Sky_mat")
+
+[sub_resource type="Environment" id="Env_main"]
+background_mode = 2
+sky = SubResource("Sky_main")
+ambient_light_source = 3
+tonemap_mode = 2
+
+[sub_resource type="StandardMaterial3D" id="Mat_floor"]
+albedo_color = Color(0.35, 0.36, 0.33, 1)
+
+[sub_resource type="PlaneMesh" id="Mesh_floor"]
+material = SubResource("Mat_floor")
+size = Vector2(10, 10)
+
+[node name="AnimViewer" type="Node3D"]
+script = ExtResource("1_viewer")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env_main")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, -0.383022, 0.321394, 0, 0.642788, 0.766044, -0.5, -0.663414, 0.55667, 0, 6, 0)
+shadow_enabled = true
+
+[node name="Floor" type="MeshInstance3D" parent="."]
+mesh = SubResource("Mesh_floor")
+
+[node name="Model" type="Node3D" parent="."]
+script = ExtResource("2_model")
+outfit = ExtResource("3_outfit")
+parts = Array[PackedScene]([ExtResource("4_head"), ExtResource("5_hair"), ExtResource("6_beard")])
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.965926, 0.258819, 0, -0.258819, 0.965926, 0.6, 1.6, 3.6)
+fov = 45.0
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="Panel" type="PanelContainer" parent="UI"]
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 332.0
+offset_bottom = 860.0
+
+[node name="Box" type="VBoxContainer" parent="UI/Panel"]
+layout_mode = 2
+
+[node name="WeaponSelect" type="OptionButton" parent="UI/Panel/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="AnimList" type="ItemList" parent="UI/Panel/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="SpeedLabel" type="Label" parent="UI/Panel/Box"]
+layout_mode = 2
+text = "Скорость"
+
+[node name="SpeedSlider" type="HSlider" parent="UI/Panel/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.05
+max_value = 2.0
+step = 0.05
+value = 1.0
+
+[node name="TimeLabel" type="Label" parent="UI/Panel/Box"]
+layout_mode = 2
+text = "Перемотка (доля анимации)"
+
+[node name="TimeSlider" type="HSlider" parent="UI/Panel/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 1.0
+step = 0.005
+
+[node name="TurnLabel" type="Label" parent="UI/Panel/Box"]
+layout_mode = 2
+text = "Поворот персонажа"
+
+[node name="TurnSlider" type="HSlider" parent="UI/Panel/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = -180.0
+max_value = 180.0
+step = 5.0
+
+[node name="PauseButton" type="Button" parent="UI/Panel/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Пауза"
+
+[node name="Info" type="Label" parent="UI/Panel/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Выберите анимацию"
