@@ -2,14 +2,21 @@
 class_name CharacterModel
 extends Node3D
 ## Собирает персонажа из частей Quaternius (одежда + голова + причёски) на одном скелете
-## и проигрывает анимации из общей библиотеки Universal Animation Library.
+## и проигрывает анимации из Universal Animation Library (части 1 и 2).
 ##
 ## Все части пака используют один скелет из 65 костей, поэтому меши частей
 ## просто переносятся на скелет одежды.
 
 signal animation_finished(anim_name: StringName)
 
-const ANIMATION_LIBRARY: AnimationLibrary = preload("res://assets/animations/UAL2_Standard.glb")
+## Библиотеки анимаций; при совпадении имён побеждает первая.
+const LIBRARIES: Array[AnimationLibrary] = [
+	preload("res://assets/animations/UAL1_Standard.glb"),
+	preload("res://assets/animations/UAL2_Standard.glb"),
+]
+
+## Общая библиотека из всех LIBRARIES, собирается один раз на всю игру.
+static var _merged_library: AnimationLibrary
 
 ## Основа персонажа: одежда со скелетом (assets/characters/outfits).
 @export var outfit: PackedScene:
@@ -24,7 +31,7 @@ const ANIMATION_LIBRARY: AnimationLibrary = preload("res://assets/animations/UAL
 		_rebuild()
 
 ## Анимация, которая играет сразу (и в редакторе тоже).
-@export var default_animation: StringName = &"Idle_FoldArms"
+@export var default_animation: StringName = &"Idle"
 
 var skeleton: Skeleton3D
 var anim_player: AnimationPlayer
@@ -35,11 +42,12 @@ func _ready() -> void:
 	_rebuild()
 
 
+## Включает анимацию. Если она уже играет и restart = false, ничего не меняет
+## (скорость, заданную через set_playback_speed, тоже не сбрасывает).
 func play(anim: StringName, blend: float = 0.15, speed: float = 1.0, restart: bool = false) -> void:
 	if anim_player == null:
 		return
 	if not restart and anim_player.current_animation == anim:
-		anim_player.speed_scale = 1.0
 		if not anim_player.is_playing():
 			anim_player.play()
 		return
@@ -47,6 +55,12 @@ func play(anim: StringName, blend: float = 0.15, speed: float = 1.0, restart: bo
 	anim_player.play(anim, blend, speed)
 	if restart:
 		anim_player.seek(0.0, true)
+
+
+## Множитель скорости текущей анимации, например чтобы шаги совпадали со скоростью героя.
+func set_playback_speed(value: float) -> void:
+	if anim_player:
+		anim_player.speed_scale = value
 
 
 func pause() -> void:
@@ -59,9 +73,20 @@ func is_playing() -> bool:
 
 
 func get_animation_length(anim: StringName) -> float:
-	if not ANIMATION_LIBRARY.has_animation(anim):
+	var library := get_library()
+	if not library.has_animation(anim):
 		return 0.0
-	return ANIMATION_LIBRARY.get_animation(anim).length
+	return library.get_animation(anim).length
+
+
+static func get_library() -> AnimationLibrary:
+	if _merged_library == null:
+		_merged_library = AnimationLibrary.new()
+		for library: AnimationLibrary in LIBRARIES:
+			for anim_name: StringName in library.get_animation_list():
+				if not _merged_library.has_animation(anim_name):
+					_merged_library.add_animation(anim_name, library.get_animation(anim_name))
+	return _merged_library
 
 
 ## Прикрепляет узел (например, меч) к кости. Возвращает созданный BoneAttachment3D.
@@ -113,7 +138,7 @@ func _rebuild() -> void:
 	anim_player = AnimationPlayer.new()
 	add_child(anim_player, false, Node.INTERNAL_MODE_FRONT)
 	anim_player.root_node = anim_player.get_path_to(_body)
-	anim_player.add_animation_library(&"", ANIMATION_LIBRARY)
+	anim_player.add_animation_library(&"", get_library())
 	anim_player.animation_finished.connect(
 		func(anim: StringName) -> void: animation_finished.emit(anim)
 	)

@@ -1,23 +1,44 @@
 class_name Player
 extends CharacterBody3D
-## Серёга: ходьба, комбо мечом, блок, рывок и бросок пороховой бомбы.
+## Серёга: шаг/бег/спринт, кувырок, комбо мечом, блок и бросок пороховой бомбы.
 ##
-## Управление (клавиатура / геймпад Xbox): WASD / левый стик — движение,
-## ЛКМ / X, RB — удар, ПКМ / LT, LB (удерживать) — блок, Пробел / A — рывок, Q / Y — бомба.
+## Управление (клавиатура / геймпад Xbox): WASD / левый стик — движение
+## (слабый наклон стика — шаг), Shift / B (удерживать) — спринт, Пробел / A — кувырок,
+## ЛКМ / X, RB — удар, ПКМ / LT, LB (удерживать) — блок, Q / Y — бомба.
 ## С мышью удары и броски летят в курсор, с геймпадом — по правому стику
 ## (или по направлению движения) с мягким автонаведением на ближайшего врага.
 
-enum State { NORMAL, ATTACK, BLOCK, DASH, THROW }
+enum State { NORMAL, ATTACK, BLOCK, ROLL, THROW }
 
-# Idle и ходьба временные: настоящие появятся с Universal Animation Library (часть 1).
-const ANIM_IDLE: StringName = &"Idle_FoldArms"
-const ANIM_MOVE: StringName = &"Walk_Carry"
+const ANIM_IDLE: StringName = &"Idle"
+const ANIM_COMBAT_IDLE: StringName = &"Sword_Idle"
+const ANIM_WALK: StringName = &"Walk"
+const ANIM_JOG: StringName = &"Jog_Fwd"
+const ANIM_SPRINT: StringName = &"Sprint"
+const ANIM_ROLL: StringName = &"Roll"
 const ANIM_BLOCK: StringName = &"Sword_Block"
-const ANIM_DASH: StringName = &"Slide_Start"
 const ANIM_THROW: StringName = &"OverhandThrow"
 const COMBO: Array[StringName] = [&"Sword_Regular_A", &"Sword_Regular_B", &"Sword_Regular_C"]
 const COMBO_DAMAGE: Array[int] = [10, 12, 25]
 const COMBO_KNOCKBACK: Array[float] = [3.0, 3.0, 7.0]
+
+# Скорость тела внутри анимаций, м/с (измерено по root motion из UAL1_Standard_RM).
+# Делим на неё реальную скорость, чтобы ноги не скользили по земле.
+const WALK_ANIM_SPEED: float = 0.97
+const JOG_ANIM_SPEED: float = 5.36
+const SPRINT_ANIM_SPEED: float = 8.25
+const ROLL_ANIM_SPEED: float = 5.75
+## Доля анимации кувырка, пока тело катится; дальше герой встаёт на месте.
+const ROLL_MOVE_END: float = 0.6
+## Неуязвимость во время кувырка (доли анимации, от и до).
+const ROLL_IFRAMES := Vector2(0.05, 0.45)
+## С этой доли кувырка можно прервать вставание движением или ударом.
+const ROLL_CANCEL: float = 0.75
+
+## Наклон стика меньше этого — шаг, больше — бег.
+const STICK_WALK_THRESHOLD: float = 0.55
+## Сколько секунд после боя герой держит боевую стойку вместо обычной.
+const COMBAT_IDLE_TIME: float = 4.0
 
 ## Доли анимации удара, когда меч наносит урон (от, до).
 const HIT_WINDOW := Vector2(0.25, 0.65)
@@ -35,12 +56,26 @@ const AUTO_AIM_MIN_DOT: float = 0.77
 ## Куда летит бомба с геймпада, если врага рядом нет.
 const GAMEPAD_THROW_DISTANCE: float = 7.0
 
-@export var move_speed: float = 5.0
+@export_group("Движение")
+@export var walk_speed: float = 1.6
+@export var run_speed: float = 5.0
+@export var sprint_speed: float = 7.5
+## Разгон и торможение, м/с².
+@export var acceleration: float = 30.0
+@export var deceleration: float = 40.0
 @export var turn_speed: float = 14.0
-@export var dash_speed: float = 13.0
-@export var dash_time: float = 0.28
-@export var dash_cooldown: float = 0.7
+## На спринте герой поворачивает тяжелее.
+@export var sprint_turn_speed: float = 7.0
+
+@export_group("Кувырок")
+## Множитель скорости анимации кувырка (1.0 — как в анимации, 5 м за 0.87 с).
+@export var roll_anim_speed: float = 1.25
+@export var roll_cooldown: float = 0.25
+
+@export_group("Бой")
 @export var throw_range: float = 12.0
+
+@export_group("Ссылки")
 @export var camera: TopDownCamera
 @export var sword_scene: PackedScene
 @export var bomb_scene: PackedScene
@@ -52,8 +87,9 @@ var aim_point_override: Vector3 = Vector3.INF
 var _state_time: float = 0.0
 var _combo_index: int = 0
 var _combo_queued: bool = false
-var _dash_dir: Vector3 = Vector3.ZERO
-var _dash_cooldown_left: float = 0.0
+var _roll_dir: Vector3 = Vector3.ZERO
+var _roll_cooldown_left: float = 0.0
+var _combat_time_left: float = 0.0
 var _bomb_thrown: bool = false
 var _throw_target: Vector3 = Vector3.ZERO
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
@@ -72,21 +108,30 @@ func is_blocking() -> bool:
 	return state == State.BLOCK
 
 
+## Во время кувырка герой ненадолго неуязвим (пригодится, когда враги начнут бить).
+func is_invulnerable() -> bool:
+	if state != State.ROLL:
+		return false
+	var progress := _roll_progress()
+	return progress >= ROLL_IFRAMES.x and progress <= ROLL_IFRAMES.y
+
+
 func _physics_process(delta: float) -> void:
 	_state_time += delta
-	_dash_cooldown_left = maxf(_dash_cooldown_left - delta, 0.0)
+	_roll_cooldown_left = maxf(_roll_cooldown_left - delta, 0.0)
+	_combat_time_left = maxf(_combat_time_left - delta, 0.0)
 
 	match state:
 		State.NORMAL:
 			_update_normal(delta)
 		State.ATTACK:
-			_update_attack()
+			_update_attack(delta)
 		State.BLOCK:
 			_update_block(delta)
-		State.DASH:
-			_update_dash()
+		State.ROLL:
+			_update_roll(delta)
 		State.THROW:
-			_update_throw()
+			_update_throw(delta)
 
 	if is_on_floor():
 		velocity.y = 0.0
@@ -100,28 +145,56 @@ func _physics_process(delta: float) -> void:
 
 func _update_normal(delta: float) -> void:
 	var dir := _input_direction()
-	_set_horizontal_velocity(dir * move_speed)
-	if dir != Vector3.ZERO:
-		_face(dir, delta)
-		model.play(ANIM_MOVE)
-	else:
-		model.play(ANIM_IDLE)
+	var strength := dir.length()
+	var target_speed := 0.0
+	if strength > 0.0:
+		if Input.is_action_pressed(&"sprint"):
+			target_speed = sprint_speed
+		elif strength < STICK_WALK_THRESHOLD:
+			target_speed = walk_speed
+		else:
+			target_speed = run_speed
+		var turn := sprint_turn_speed if target_speed >= sprint_speed else turn_speed
+		_face(dir, delta, turn)
+	_accelerate(dir.normalized() * target_speed, delta)
+	_update_locomotion_animation()
 
 	if Input.is_action_just_pressed(&"attack"):
 		_start_attack(0)
 	elif Input.is_action_pressed(&"block"):
+		_combat_time_left = COMBAT_IDLE_TIME
 		_change_state(State.BLOCK)
 		model.play(ANIM_BLOCK, 0.1, 1.0, true)
-	elif Input.is_action_just_pressed(&"dash") and _dash_cooldown_left <= 0.0:
-		_start_dash(dir)
+	elif _try_roll():
+		pass
 	elif Input.is_action_just_pressed(&"throw") and bomb_scene:
 		_start_throw()
+
+
+## Анимация ходьбы по реальной скорости: стойка → шаг → бег → спринт,
+## и скорость анимации подгоняется так, чтобы шаги совпадали с перемещением.
+func _update_locomotion_animation() -> void:
+	var speed := Vector2(velocity.x, velocity.z).length()
+	if speed < 0.15:
+		model.play(ANIM_COMBAT_IDLE if _combat_time_left > 0.0 else ANIM_IDLE, 0.25)
+		return
+	var anim := ANIM_WALK
+	var anim_speed := WALK_ANIM_SPEED
+	if speed > (run_speed + sprint_speed) * 0.5:
+		anim = ANIM_SPRINT
+		anim_speed = SPRINT_ANIM_SPEED
+	elif speed > (walk_speed + run_speed) * 0.5:
+		anim = ANIM_JOG
+		anim_speed = JOG_ANIM_SPEED
+	model.play(anim, 0.2)
+	model.set_playback_speed(clampf(speed / anim_speed, 0.5, 1.8))
 
 
 func _start_attack(index: int) -> void:
 	_change_state(State.ATTACK)
 	_combo_index = index
 	_combo_queued = false
+	_combat_time_left = COMBAT_IDLE_TIME
 	attack_area.active = false
 	attack_area.damage = COMBO_DAMAGE[index]
 	attack_area.knockback = COMBO_KNOCKBACK[index]
@@ -129,11 +202,14 @@ func _start_attack(index: int) -> void:
 	model.play(COMBO[index], 0.08, 1.0, true)
 
 
-func _update_attack() -> void:
-	_set_horizontal_velocity(Vector3.ZERO)
+func _update_attack(delta: float) -> void:
+	_accelerate(Vector3.ZERO, delta)
 	var progress := _state_time / model.get_animation_length(COMBO[_combo_index])
 	attack_area.active = progress >= HIT_WINDOW.x and progress <= HIT_WINDOW.y
 
+	# После удара (когда меч уже не бьёт) можно уйти кувырком.
+	if progress > HIT_WINDOW.y and _try_roll():
+		return
 	if Input.is_action_just_pressed(&"attack"):
 		_combo_queued = true
 	var has_next := _combo_index < COMBO.size() - 1
@@ -144,26 +220,49 @@ func _update_attack() -> void:
 
 
 func _update_block(delta: float) -> void:
-	_set_horizontal_velocity(Vector3.ZERO)
-	_face(_aim_direction(), delta)
+	_accelerate(Vector3.ZERO, delta)
+	_face(_aim_direction(), delta, turn_speed)
+	_combat_time_left = COMBAT_IDLE_TIME
+	if _try_roll():
+		return
 	if _state_time >= BLOCK_HOLD_TIME and model.is_playing():
 		model.pause()
 	if not Input.is_action_pressed(&"block"):
 		_change_state(State.NORMAL)
 
 
-func _start_dash(input_dir: Vector3) -> void:
-	_dash_dir = input_dir if input_dir != Vector3.ZERO else _facing()
-	_dash_cooldown_left = dash_cooldown
-	_face_instant(_dash_dir)
-	_change_state(State.DASH)
-	model.play(ANIM_DASH, 0.05, 1.3, true)
+## Начинает кувырок, если нажата кнопка и он не на перезарядке.
+func _try_roll() -> bool:
+	if not Input.is_action_just_pressed(&"roll") or _roll_cooldown_left > 0.0:
+		return false
+	var dir := _input_direction()
+	_roll_dir = dir.normalized() if dir != Vector3.ZERO else _facing()
+	_face_instant(_roll_dir)
+	_change_state(State.ROLL)
+	model.play(ANIM_ROLL, 0.05, roll_anim_speed, true)
+	return true
 
 
-func _update_dash() -> void:
-	_set_horizontal_velocity(_dash_dir * dash_speed)
-	if _state_time >= dash_time:
+func _update_roll(delta: float) -> void:
+	var progress := _roll_progress()
+	if progress < ROLL_MOVE_END:
+		_set_horizontal_velocity(_roll_dir * ROLL_ANIM_SPEED * roll_anim_speed)
+	else:
+		_accelerate(Vector3.ZERO, delta)
+
+	var wants_to_act := (
+		_input_direction() != Vector3.ZERO
+		or Input.is_action_just_pressed(&"attack")
+		or Input.is_action_just_pressed(&"roll")
+	)
+	if progress >= 1.0 or (progress >= ROLL_CANCEL and wants_to_act):
+		_roll_cooldown_left = roll_cooldown
 		_change_state(State.NORMAL)
+		_update_normal(delta)
+
+
+func _roll_progress() -> float:
+	return _state_time * roll_anim_speed / model.get_animation_length(ANIM_ROLL)
 
 
 func _start_throw() -> void:
@@ -172,18 +271,21 @@ func _start_throw() -> void:
 	offset = offset.limit_length(throw_range)
 	_throw_target = global_position + offset
 	_bomb_thrown = false
+	_combat_time_left = COMBAT_IDLE_TIME
 	_face_instant(offset)
 	_change_state(State.THROW)
 	model.play(ANIM_THROW, 0.1, THROW_SPEED, true)
 
 
-func _update_throw() -> void:
-	_set_horizontal_velocity(Vector3.ZERO)
+func _update_throw(delta: float) -> void:
+	_accelerate(Vector3.ZERO, delta)
 	if not _bomb_thrown and _state_time >= THROW_RELEASE_TIME / THROW_SPEED:
 		_bomb_thrown = true
 		var bomb := bomb_scene.instantiate() as Bomb
 		get_parent().add_child(bomb)
 		bomb.launch(model.get_bone_global_position(&"hand_r"), _throw_target, 0.7)
+	if _bomb_thrown and _try_roll():
+		return
 	if _state_time >= 0.85 * model.get_animation_length(ANIM_THROW) / THROW_SPEED:
 		_change_state(State.NORMAL)
 
@@ -218,6 +320,13 @@ func _camera_relative(input: Vector2) -> Vector3:
 	return (right * input.x - forward * input.y).limit_length(1.0)
 
 
+## Плавно меняет горизонтальную скорость к target: разгон и торможение с разной силой.
+func _accelerate(target: Vector3, delta: float) -> void:
+	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
+	var rate := acceleration if target.length() > horizontal.length() else deceleration
+	_set_horizontal_velocity(horizontal.move_toward(target, rate * delta))
+
+
 func _set_horizontal_velocity(value: Vector3) -> void:
 	velocity.x = value.x
 	velocity.z = value.z
@@ -229,11 +338,11 @@ func _facing() -> Vector3:
 	return Vector3(z.x, 0.0, z.z).normalized()
 
 
-func _face(dir: Vector3, delta: float) -> void:
+func _face(dir: Vector3, delta: float, speed: float) -> void:
 	if dir.length() < 0.01:
 		return
 	var target_yaw := atan2(dir.x, dir.z)
-	model.rotation.y = lerp_angle(model.rotation.y, target_yaw, 1.0 - exp(-turn_speed * delta))
+	model.rotation.y = lerp_angle(model.rotation.y, target_yaw, 1.0 - exp(-speed * delta))
 
 
 func _face_instant(dir: Vector3) -> void:
