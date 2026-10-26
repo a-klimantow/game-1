@@ -51,7 +51,8 @@ func _explode() -> void:
 	query.collision_mask = Hurtbox.LAYER
 	for result: Dictionary in get_world_3d().direct_space_state.intersect_shape(query, 16):
 		var hurtbox := result["collider"] as Hurtbox
-		if hurtbox:
+		# Свои бомбы героя не ранят — чтобы не наказывать за бросок под ноги.
+		if hurtbox and hurtbox.team != &"player":
 			hurtbox.receive_hit(damage, global_position, knockback)
 	Explosion.spawn(get_parent(), global_position, radius)
 	queue_free()

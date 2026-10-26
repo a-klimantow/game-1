@@ -1,6 +1,7 @@
 class_name Player
 extends CharacterBody3D
 ## Серёга: шаг/бег/спринт, кувырок, комбо мечом, блок и бросок пороховой бомбы.
+## Получает урон: блок спереди почти гасит удар, кувырок даёт неуязвимость.
 ##
 ## Управление (клавиатура / геймпад Xbox): WASD / левый стик — движение
 ## (слабый наклон стика — шаг), Shift / B (удерживать) — спринт, Пробел / A — кувырок,
@@ -8,7 +9,7 @@ extends CharacterBody3D
 ## С мышью удары и броски летят в курсор, с геймпадом — по правому стику
 ## (или по направлению движения) с мягким автонаведением на ближайшего врага.
 
-enum State { NORMAL, ATTACK, BLOCK, ROLL, THROW }
+enum State { NORMAL, ATTACK, BLOCK, ROLL, THROW, HIT, DEAD }
 
 const ANIM_IDLE: StringName = &"Idle"
 const ANIM_COMBAT_IDLE: StringName = &"Sword_Idle"
@@ -18,6 +19,8 @@ const ANIM_SPRINT: StringName = &"Sprint"
 const ANIM_ROLL: StringName = &"Roll"
 const ANIM_BLOCK: StringName = &"Sword_Block"
 const ANIM_THROW: StringName = &"OverhandThrow"
+const ANIM_HIT: StringName = &"Hit_Chest"
+const ANIM_DEATH: StringName = &"Death01"
 const COMBO: Array[StringName] = [&"Sword_Regular_A", &"Sword_Regular_B", &"Sword_Regular_C"]
 const COMBO_DAMAGE: Array[int] = [10, 12, 25]
 const COMBO_KNOCKBACK: Array[float] = [3.0, 3.0, 7.0]
@@ -49,6 +52,16 @@ const BLOCK_HOLD_TIME: float = 0.35
 const THROW_SPEED: float = 1.2
 ## Момент выпуска бомбы, в секундах анимации броска.
 const THROW_RELEASE_TIME: float = 0.55
+
+## Блок спасает от ударов спереди: косинус половины угла защиты (≈ 70°) и доля урона.
+const BLOCK_MIN_DOT: float = 0.34
+const BLOCK_DAMAGE_FACTOR: float = 0.2
+## Сколько секунд герой оглушён после пропущенного удара.
+const HIT_STUN_TIME: float = 0.4
+## Через сколько секунд после смерти герой возрождается.
+const RESPAWN_TIME: float = 3.0
+## Длительность «заморозки» мира при попадании мечом — для веса удара.
+const HITSTOP_TIME: float = 0.05
 
 ## Автонаведение для геймпада: дальность и ширина конуса (косинус угла ≈ 40°).
 const AUTO_AIM_RANGE: float = 6.0
@@ -93,15 +106,22 @@ var _combat_time_left: float = 0.0
 var _bomb_thrown: bool = false
 var _throw_target: Vector3 = Vector3.ZERO
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
+var _spawn_transform: Transform3D
 
 @onready var model: CharacterModel = $Model
 @onready var attack_area: Hitbox = $Model/AttackArea
+@onready var hurtbox: Hurtbox = $Hurtbox
+@onready var health: Health = $Health
 
 
 func _ready() -> void:
+	_spawn_transform = global_transform
 	if sword_scene:
 		model.attach_to_bone(sword_scene.instantiate() as Node3D, &"hand_r")
 	model.play(ANIM_IDLE, 0.0)
+	hurtbox.hit_received.connect(_on_hit_received)
+	health.died.connect(_on_died)
+	attack_area.hit_landed.connect(_on_attack_landed)
 
 
 func is_blocking() -> bool:
@@ -132,6 +152,10 @@ func _physics_process(delta: float) -> void:
 			_update_roll(delta)
 		State.THROW:
 			_update_throw(delta)
+		State.HIT:
+			_update_hit(delta)
+		State.DEAD:
+			_update_dead(delta)
 
 	if is_on_floor():
 		velocity.y = 0.0
@@ -290,6 +314,78 @@ func _update_throw(delta: float) -> void:
 		_change_state(State.NORMAL)
 
 
+# --- Урон по герою -----------------------------------------------------------
+
+
+func _on_hit_received(damage: int, source_position: Vector3, knockback: float) -> void:
+	if state == State.DEAD or is_invulnerable():
+		return
+	var from_attacker := source_position - global_position
+	from_attacker.y = 0.0
+	var away := -from_attacker.normalized() if from_attacker.length() > 0.01 else -_facing()
+	var blocked := state == State.BLOCK and _facing().dot(-away) >= BLOCK_MIN_DOT
+
+	if blocked:
+		health.damage(ceili(damage * BLOCK_DAMAGE_FACTOR))
+		_set_horizontal_velocity(away * knockback * 0.4)
+		model.flash(Color(0.6, 0.8, 1.0, 0.5), 0.2)
+		_shake_camera(0.25)
+		_vibrate(0.3, 0.0, 0.12)
+		return
+
+	health.damage(damage)
+	model.flash(Color(1.0, 0.15, 0.1, 0.6), 0.3)
+	_shake_camera(0.6)
+	_vibrate(0.5, 0.8, 0.25)
+	if health.is_dead():
+		return
+	_change_state(State.HIT)
+	_face_instant(-away)
+	_set_horizontal_velocity(away * knockback)
+	model.play(ANIM_HIT, 0.05, 1.0, true)
+
+
+func _update_hit(delta: float) -> void:
+	_accelerate(Vector3.ZERO, delta)
+	if _state_time >= HIT_STUN_TIME:
+		_change_state(State.NORMAL)
+
+
+func _on_died() -> void:
+	_change_state(State.DEAD)
+	model.play(ANIM_DEATH, 0.1, 1.0, true)
+
+
+func _update_dead(delta: float) -> void:
+	_accelerate(Vector3.ZERO, delta)
+	if _state_time >= RESPAWN_TIME:
+		global_transform = _spawn_transform
+		reset_physics_interpolation()
+		velocity = Vector3.ZERO
+		health.reset()
+		_change_state(State.NORMAL)
+		model.play(ANIM_IDLE, 0.0)
+
+
+## Короткая заморозка мира при попадании мечом — удар ощущается весомее.
+func _on_attack_landed(_target: Hurtbox) -> void:
+	_vibrate(0.4, 0.2, 0.08)
+	Engine.time_scale = 0.05
+	await get_tree().create_timer(HITSTOP_TIME, true, false, true).timeout
+	Engine.time_scale = 1.0
+
+
+func _shake_camera(strength: float) -> void:
+	if camera:
+		camera.shake(strength)
+
+
+func _vibrate(weak: float, strong: float, duration: float) -> void:
+	if InputDevice.is_gamepad():
+		for device: int in Input.get_connected_joypads():
+			Input.start_joy_vibration(device, weak, strong, duration)
+
+
 func _change_state(new_state: State) -> void:
 	state = new_state
 	_state_time = 0.0
@@ -342,12 +438,14 @@ func _face(dir: Vector3, delta: float, speed: float) -> void:
 	if dir.length() < 0.01:
 		return
 	var target_yaw := atan2(dir.x, dir.z)
-	model.rotation.y = lerp_angle(model.rotation.y, target_yaw, 1.0 - exp(-speed * delta))
+	model.global_rotation.y = lerp_angle(
+		model.global_rotation.y, target_yaw, 1.0 - exp(-speed * delta)
+	)
 
 
 func _face_instant(dir: Vector3) -> void:
 	if dir.length() >= 0.01:
-		model.rotation.y = atan2(dir.x, dir.z)
+		model.global_rotation.y = atan2(dir.x, dir.z)
 
 
 func _aim_point() -> Vector3:

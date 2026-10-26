@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=15 format=3]
 
 [ext_resource type="Script" path="res://scripts/player/player.gd" id="1_player"]
 [ext_resource type="Script" path="res://scripts/characters/character_model.gd" id="2_model"]
@@ -9,9 +9,15 @@
 [ext_resource type="Script" path="res://scripts/combat/hitbox.gd" id="7_hitbox"]
 [ext_resource type="PackedScene" path="res://scenes/weapons/sword.tscn" id="8_sword"]
 [ext_resource type="PackedScene" path="res://scenes/combat/bomb.tscn" id="9_bomb"]
+[ext_resource type="Script" path="res://scripts/combat/hurtbox.gd" id="10_hurtbox"]
+[ext_resource type="Script" path="res://scripts/combat/health.gd" id="11_health"]
 
 [sub_resource type="CapsuleShape3D" id="Shape_body"]
 radius = 0.35
+height = 1.8
+
+[sub_resource type="CapsuleShape3D" id="Shape_hurt"]
+radius = 0.4
 height = 1.8
 
 [sub_resource type="BoxShape3D" id="Shape_attack"]
@@ -39,3 +45,14 @@ script = ExtResource("7_hitbox")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Model/AttackArea"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0.9)
 shape = SubResource("Shape_attack")
+
+[node name="Health" type="Node" parent="."]
+script = ExtResource("11_health")
+
+[node name="Hurtbox" type="Area3D" parent="."]
+script = ExtResource("10_hurtbox")
+team = &"player"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hurtbox"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+shape = SubResource("Shape_hurt")

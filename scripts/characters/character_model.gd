@@ -36,6 +36,8 @@ static var _merged_library: AnimationLibrary
 var skeleton: Skeleton3D
 var anim_player: AnimationPlayer
 var _body: Node3D
+var _overlay: StandardMaterial3D
+var _flash_tween: Tween
 
 
 func _ready() -> void:
@@ -89,6 +91,26 @@ static func get_library() -> AnimationLibrary:
 	return _merged_library
 
 
+## Подсвечивает всю модель цветом. rise = false — вспышка, которая гаснет (попадание);
+## rise = true — свечение, которое нарастает (предупреждение о замахе).
+func flash(color: Color, duration: float, rise: bool = false) -> void:
+	if _overlay == null:
+		return
+	if _flash_tween:
+		_flash_tween.kill()
+	var target_alpha := color.a
+	_overlay.albedo_color = Color(color, 0.0 if rise else target_alpha)
+	_flash_tween = create_tween()
+	_flash_tween.tween_property(_overlay, "albedo_color:a", target_alpha if rise else 0.0, duration)
+
+
+func clear_flash() -> void:
+	if _flash_tween:
+		_flash_tween.kill()
+	if _overlay:
+		_overlay.albedo_color.a = 0.0
+
+
 ## Прикрепляет узел (например, меч) к кости. Возвращает созданный BoneAttachment3D.
 func attach_to_bone(node: Node3D, bone: StringName) -> BoneAttachment3D:
 	var attachment := BoneAttachment3D.new()
@@ -134,6 +156,14 @@ func _rebuild() -> void:
 			skeleton.add_child(mesh)
 			mesh.skeleton = NodePath("..")
 		part_root.free()
+
+	# Общий полупрозрачный слой поверх всех мешей — для вспышек (flash).
+	_overlay = StandardMaterial3D.new()
+	_overlay.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_overlay.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_overlay.albedo_color = Color(1.0, 1.0, 1.0, 0.0)
+	for node: Node in skeleton.find_children("*", "MeshInstance3D", true, false):
+		(node as MeshInstance3D).material_overlay = _overlay
 
 	anim_player = AnimationPlayer.new()
 	add_child(anim_player, false, Node.INTERNAL_MODE_FRONT)

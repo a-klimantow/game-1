@@ -7,6 +7,9 @@ signal hit_received(damage: int, source_position: Vector3, knockback: float)
 ## Слой физики 4 — «hurtbox» (см. Project Settings → Layer Names).
 const LAYER: int = 1 << 3
 
+## Чья это зона: удары своей команды по ней не проходят.
+@export var team: StringName = &"enemy"
+
 
 func _ready() -> void:
 	collision_layer = LAYER

@@ -1,8 +1,10 @@
-[gd_scene load_steps=20 format=3]
+[gd_scene load_steps=22 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/player/player.tscn" id="1_player"]
 [ext_resource type="PackedScene" path="res://scenes/enemies/training_dummy.tscn" id="2_dummy"]
 [ext_resource type="Script" path="res://scripts/camera/top_down_camera.gd" id="3_camera"]
+[ext_resource type="PackedScene" path="res://scenes/enemies/possessed.tscn" id="4_possessed"]
+[ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="5_hud"]
 
 [sub_resource type="ProceduralSkyMaterial" id="Sky_mat"]
 sky_top_color = Color(0.36, 0.5, 0.68, 1)
@@ -155,6 +157,12 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 0, -6)
 [node name="Dummy3" parent="." instance=ExtResource("2_dummy")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 0, -7)
 
+[node name="Possessed1" parent="." instance=ExtResource("4_possessed")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 9, 0, 6)
+
+[node name="Possessed2" parent="." instance=ExtResource("4_possessed")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 11, 0, 8)
+
 [node name="Player" parent="." node_paths=PackedStringArray("camera") instance=ExtResource("1_player")]
 camera = NodePath("../Camera")
 
@@ -163,3 +171,6 @@ transform = Transform3D(1, 0, 0, 0, 0.563337, 0.826227, 0, -0.826227, 0.563337, 
 fov = 50.0
 script = ExtResource("3_camera")
 target = NodePath("../Player")
+
+[node name="Hud" parent="." node_paths=PackedStringArray("player") instance=ExtResource("5_hud")]
+player = NodePath("../Player")

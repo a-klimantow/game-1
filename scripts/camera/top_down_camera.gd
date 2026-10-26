@@ -6,6 +6,12 @@ extends Camera3D
 ## Смещение камеры от цели. Наклон камеры получается из него автоматически.
 @export var offset: Vector3 = Vector3(0.0, 11.0, 7.5)
 @export var follow_speed: float = 6.0
+## Насколько быстро затухает тряска (в единицах силы в секунду).
+@export var shake_decay: float = 2.5
+## Максимальное смещение картинки при тряске силой 1.0.
+@export var shake_amount: float = 0.35
+
+var _shake: float = 0.0
 
 
 func _ready() -> void:
@@ -21,6 +27,15 @@ func _process(delta: float) -> void:
 		return
 	var desired := target.get_global_transform_interpolated().origin + offset
 	global_position = global_position.lerp(desired, 1.0 - exp(-follow_speed * delta))
+
+	_shake = move_toward(_shake, 0.0, shake_decay * delta)
+	h_offset = randf_range(-1.0, 1.0) * _shake * _shake * shake_amount
+	v_offset = randf_range(-1.0, 1.0) * _shake * _shake * shake_amount
+
+
+## Трясёт камеру; strength от 0 до 1. Сильные толчки не перекрываются слабыми.
+func shake(strength: float) -> void:
+	_shake = maxf(_shake, clampf(strength, 0.0, 1.0))
 
 
 ## Точка на горизонтальной плоскости height под курсором мыши.
