@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/hud.gd" id="1_hud"]
 
@@ -32,6 +32,13 @@ corner_radius_bottom_left = 2
 
 [sub_resource type="StyleBoxFlat" id="Style_shield"]
 bg_color = Color(0.62, 0.45, 0.25, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="Style_stamina"]
+bg_color = Color(0.45, 0.72, 0.25, 1)
 corner_radius_top_left = 2
 corner_radius_top_right = 2
 corner_radius_bottom_right = 2
@@ -94,13 +101,24 @@ text = "100 / 100"
 horizontal_alignment = 1
 vertical_alignment = 1
 
+[node name="StaminaBar" type="ProgressBar" parent="HealthPanel"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_top = 56.0
+offset_right = 300.0
+offset_bottom = 68.0
+theme_override_styles/background = SubResource("Style_bg")
+theme_override_styles/fill = SubResource("Style_stamina")
+value = 100.0
+show_percentage = false
+
 [node name="ShieldBar" type="ProgressBar" parent="HealthPanel"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
-offset_top = 56.0
+offset_top = 72.0
 offset_right = 240.0
-offset_bottom = 66.0
+offset_bottom = 82.0
 theme_override_styles/background = SubResource("Style_bg")
 theme_override_styles/fill = SubResource("Style_shield")
 value = 100.0
@@ -109,9 +127,9 @@ show_percentage = false
 [node name="WeaponLabel" type="Label" parent="HealthPanel"]
 unique_name_in_owner = true
 layout_mode = 0
-offset_top = 70.0
+offset_top = 86.0
 offset_right = 360.0
-offset_bottom = 94.0
+offset_bottom = 110.0
 theme_override_colors/font_color = Color(0.95, 0.88, 0.7, 1)
 theme_override_colors/font_outline_color = Color(0.05, 0.03, 0.02, 1)
 theme_override_constants/outline_size = 6

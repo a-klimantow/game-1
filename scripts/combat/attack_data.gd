@@ -7,6 +7,8 @@ extends Resource
 @export var anim_speed: float = 1.0
 @export var damage: int = 10
 @export var knockback: float = 3.0
+## Сколько выносливости стоит удар.
+@export var stamina_cost: float = 10.0
 
 @export_group("Тайминги")
 ## Окна удара: в это время зона удара активна. Несколько окон — несколько взмахов.

@@ -6,6 +6,9 @@ extends Node3D
 ##
 ## Все части пака используют один скелет из 65 костей, поэтому меши частей
 ## просто переносятся на скелет одежды.
+##
+## Анимации в два слоя: основной (всё тело) и верхний (корпус, руки, голова).
+## Верхний слой перекрывает основной — так ноги могут идти, а руки держать блок.
 
 signal animation_finished(anim_name: StringName)
 
@@ -15,8 +18,26 @@ const LIBRARIES: Array[AnimationLibrary] = [
 	preload("res://assets/animations/UAL2_Standard.glb"),
 ]
 
+## Кости ног и таза: в верхнем слое их дорожки убираются, ими управляет основной слой.
+const LOWER_BODY_BONES: Array[StringName] = [
+	&"root",
+	&"pelvis",
+	&"thigh_l",
+	&"calf_l",
+	&"foot_l",
+	&"ball_l",
+	&"ball_leaf_l",
+	&"thigh_r",
+	&"calf_r",
+	&"foot_r",
+	&"ball_r",
+	&"ball_leaf_r",
+]
+
 ## Общая библиотека из всех LIBRARIES, собирается один раз на всю игру.
 static var _merged_library: AnimationLibrary
+## Копии анимаций без костей ног — для верхнего слоя (собираются по мере надобности).
+static var _upper_library: AnimationLibrary
 
 ## Основа персонажа: одежда со скелетом (assets/characters/outfits).
 @export var outfit: PackedScene:
@@ -35,6 +56,8 @@ static var _merged_library: AnimationLibrary
 
 var skeleton: Skeleton3D
 var anim_player: AnimationPlayer
+## Верхний слой: корпус, руки, голова. Играет поверх основного.
+var upper_player: AnimationPlayer
 var _body: Node3D
 var _overlay: StandardMaterial3D
 var _flash_tween: Tween
@@ -74,6 +97,40 @@ func is_playing() -> bool:
 	return anim_player != null and anim_player.is_playing()
 
 
+## Анимация только для верхней части тела поверх основной (ноги остаются за основной).
+func play_upper(
+	anim: StringName, blend: float = 0.1, speed: float = 1.0, restart: bool = false
+) -> void:
+	if upper_player == null:
+		return
+	_ensure_upper_animation(anim)
+	upper_player.speed_scale = 1.0
+	if not restart and upper_player.current_animation == anim:
+		if not upper_player.is_playing():
+			upper_player.play()
+		return
+	upper_player.play(anim, blend, speed)
+	if restart:
+		upper_player.seek(0.0, true)
+
+
+## Выключает верхний слой — всё тело снова под основной анимацией.
+func stop_upper() -> void:
+	if upper_player and upper_player.current_animation != "":
+		upper_player.stop()
+
+
+## Замораживает верхний слой на текущем кадре (например, блок мечом в стойке).
+## Не pause(): остановленный слой перестаёт применять позу, и основной слой перебил бы руки.
+func pause_upper() -> void:
+	if upper_player:
+		upper_player.speed_scale = 0.0
+
+
+func is_upper_playing() -> bool:
+	return upper_player != null and upper_player.is_playing() and upper_player.speed_scale != 0.0
+
+
 func get_animation_length(anim: StringName) -> float:
 	var library := get_library()
 	if not library.has_animation(anim):
@@ -89,6 +146,20 @@ static func get_library() -> AnimationLibrary:
 				if not _merged_library.has_animation(anim_name):
 					_merged_library.add_animation(anim_name, library.get_animation(anim_name))
 	return _merged_library
+
+
+## Готовит копию анимации без дорожек костей ног для верхнего слоя.
+static func _ensure_upper_animation(anim: StringName) -> void:
+	if _upper_library == null:
+		_upper_library = AnimationLibrary.new()
+	if _upper_library.has_animation(anim) or not get_library().has_animation(anim):
+		return
+	var upper := get_library().get_animation(anim).duplicate(true) as Animation
+	for track: int in range(upper.get_track_count() - 1, -1, -1):
+		var bone := StringName(upper.track_get_path(track).get_concatenated_subnames())
+		if bone in LOWER_BODY_BONES:
+			upper.remove_track(track)
+	_upper_library.add_animation(anim, upper)
 
 
 ## Подсвечивает всю модель цветом. rise = false — вспышка, которая гаснет (попадание);
@@ -136,6 +207,9 @@ func _rebuild() -> void:
 	if anim_player:
 		anim_player.free()
 		anim_player = null
+	if upper_player:
+		upper_player.free()
+		upper_player = null
 	skeleton = null
 	if outfit == null:
 		return
@@ -172,5 +246,15 @@ func _rebuild() -> void:
 	anim_player.animation_finished.connect(
 		func(anim: StringName) -> void: animation_finished.emit(anim)
 	)
+
+	# Верхний слой обрабатывается после основного и перекрывает его кости корпуса и рук.
+	if _upper_library == null:
+		_upper_library = AnimationLibrary.new()
+	upper_player = AnimationPlayer.new()
+	upper_player.process_priority = 1
+	add_child(upper_player, false, Node.INTERNAL_MODE_FRONT)
+	upper_player.root_node = upper_player.get_path_to(_body)
+	upper_player.add_animation_library(&"", _upper_library)
+
 	if default_animation != &"":
 		play(default_animation, 0.0)

@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3]
+[gd_scene load_steps=16 format=3]
 
 [ext_resource type="Script" path="res://scripts/player/player.gd" id="1_player"]
 [ext_resource type="Script" path="res://scripts/characters/character_model.gd" id="2_model"]
@@ -11,6 +11,7 @@
 [ext_resource type="PackedScene" path="res://scenes/combat/bomb.tscn" id="9_bomb"]
 [ext_resource type="Script" path="res://scripts/combat/hurtbox.gd" id="10_hurtbox"]
 [ext_resource type="Script" path="res://scripts/combat/health.gd" id="11_health"]
+[ext_resource type="Script" path="res://scripts/combat/stamina.gd" id="12_stamina"]
 
 [sub_resource type="CapsuleShape3D" id="Shape_body"]
 radius = 0.35
@@ -48,6 +49,9 @@ shape = SubResource("Shape_attack")
 
 [node name="Health" type="Node" parent="."]
 script = ExtResource("11_health")
+
+[node name="Stamina" type="Node" parent="."]
+script = ExtResource("12_stamina")
 
 [node name="Hurtbox" type="Area3D" parent="."]
 script = ExtResource("10_hurtbox")

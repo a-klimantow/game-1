@@ -8,6 +8,30 @@ const ARENA: PackedScene = preload("res://scenes/levels/test_arena.tscn")
 
 ## [время в секундах, действие, нажать(true)/отпустить(false)]
 const SCENARIOS: Dictionary = {
+	# Спринт до истощения, кувырки подряд, серия ударов, блок мечом до пробития.
+	"stamina":
+	[
+		[0.2, &"move_down", true],
+		[0.2, &"sprint", true],
+		[6.5, &"sprint", false],
+		[6.5, &"move_down", false],
+		[6.6, &"roll", true],
+		[6.65, &"roll", false],
+		[9.0, &"roll", true],
+		[9.05, &"roll", false],
+		[10.0, &"roll", true],
+		[10.05, &"roll", false],
+		[11.0, &"roll", true],
+		[11.05, &"roll", false],
+		[12.0, &"roll", true],
+		[12.05, &"roll", false],
+		[13.0, &"roll", true],
+		[13.05, &"roll", false],
+		[14.0, &"roll", true],
+		[14.05, &"roll", false],
+		[15.0, &"roll", true],
+		[15.05, &"roll", false],
+	],
 	"movement":
 	[
 		[0.3, &"move_down", true],
@@ -179,12 +203,14 @@ func _log_state() -> void:
 	var speed := Vector2(_player.velocity.x, _player.velocity.z).length()
 	var anim_player := _player.model.anim_player
 	var line := (
-		"%5.2fs  %-10s %-6s %3d hp  %-16s  v=%.1f%s"
+		"%5.2fs  %-10s %-6s %3d hp %3d вын%s  %-16s  v=%.1f%s"
 		% [
 			_time,
 			_player.weapon.display_name if _player.weapon else "-",
 			Player.State.keys()[_player.state],
 			_player.health.current,
+			roundi(_player.stamina.current),
+			"(выдохся)" if _player.stamina.is_exhausted else "",
 			anim_player.current_animation,
 			speed,
 			(

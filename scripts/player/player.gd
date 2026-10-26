@@ -4,6 +4,8 @@ extends CharacterBody3D
 ## блок, бросок пороховой бомбы, подбор оружия и щита. Удары и блок — из WeaponData,
 ## со щитом блок и сильный удар — из ShieldData; щит изнашивается и ломается.
 ## Получает урон: блок спереди гасит удар, кувырок даёт неуязвимость.
+## Выносливость (Stamina) тратится на удары, кувырок, спринт, контратаку, бросок
+## и удары в блок; если в блоке она кончилась — блок пробит.
 ##
 ## Управление (клавиатура / геймпад Xbox): WASD / левый стик — движение
 ## (слабый наклон стика — шаг), Shift / B (удерживать) — спринт, Пробел / A — кувырок,
@@ -74,6 +76,8 @@ const THROW_RELEASE_TIME: float = 0.55
 ## Сколько секунд герой оглушён после пропущенного удара и после поломки щита.
 const HIT_STUN_TIME: float = 0.4
 const SHIELD_BREAK_STUN_TIME: float = 0.6
+## Оглушение, когда в блоке кончилась выносливость (блок пробит).
+const GUARD_BREAK_STUN_TIME: float = 0.8
 ## Сколько держать «подобрать», чтобы выбросить щит.
 const DROP_HOLD_TIME: float = 0.5
 const SHIELD_DEBRIS_COLOR := Color(0.45, 0.28, 0.14)
@@ -104,6 +108,13 @@ const GAMEPAD_THROW_DISTANCE: float = 7.0
 ## Множитель скорости анимации кувырка (1.0 — как в анимации, 5 м за 0.87 с).
 @export var roll_anim_speed: float = 1.25
 @export var roll_cooldown: float = 0.25
+
+@export_group("Выносливость")
+@export var roll_stamina_cost: float = 22.0
+## Расход на спринте, в секунду.
+@export var sprint_stamina_per_second: float = 18.0
+@export var counter_stamina_cost: float = 12.0
+@export var throw_stamina_cost: float = 10.0
 
 @export_group("Бой")
 @export var starting_weapon: WeaponData
@@ -154,6 +165,7 @@ var _attack_box: BoxShape3D
 @onready var attack_shape: CollisionShape3D = $Model/AttackArea/CollisionShape3D
 @onready var hurtbox: Hurtbox = $Hurtbox
 @onready var health: Health = $Health
+@onready var stamina: Stamina = $Stamina
 
 
 func _ready() -> void:
@@ -236,6 +248,9 @@ func _physics_process(delta: float) -> void:
 	_roll_cooldown_left = maxf(_roll_cooldown_left - delta, 0.0)
 	_combat_time_left = maxf(_combat_time_left - delta, 0.0)
 	_counter_cooldown_left = maxf(_counter_cooldown_left - delta, 0.0)
+	var block := _block_data()
+	var blocking := state == State.BLOCK and block != null
+	stamina.regen_multiplier = block.stamina_regen_multiplier if blocking else 1.0
 
 	match state:
 		State.NORMAL:
@@ -272,7 +287,8 @@ func _update_normal(delta: float) -> void:
 	var strength := dir.length()
 	var target_speed := 0.0
 	if strength > 0.0:
-		if Input.is_action_pressed(&"sprint"):
+		# Выдохся — спринта нет, пока выносливость не наберётся.
+		if Input.is_action_pressed(&"sprint") and not stamina.is_exhausted:
 			target_speed = sprint_speed
 		elif strength < STICK_WALK_THRESHOLD:
 			target_speed = walk_speed
@@ -281,6 +297,11 @@ func _update_normal(delta: float) -> void:
 		var turn := sprint_turn_speed if target_speed >= sprint_speed else turn_speed
 		_face(dir, delta, turn)
 	_accelerate(dir.normalized() * target_speed, delta)
+	# Спринт тратит выносливость, только пока герой действительно бежит (а не упёрся в стену).
+	var real := get_real_velocity()
+	var moving_fast := Vector2(real.x, real.z).length() > run_speed
+	if target_speed >= sprint_speed and moving_fast:
+		stamina.spend(sprint_stamina_per_second * delta)
 	_update_locomotion_animation()
 
 	if _update_attack_button(delta):
@@ -294,7 +315,8 @@ func _update_normal(delta: float) -> void:
 	elif _try_roll():
 		pass
 	elif Input.is_action_just_pressed(&"throw") and bomb_scene:
-		_start_throw()
+		if stamina.try_spend(throw_stamina_cost):
+			_start_throw()
 	else:
 		_update_interact_button(delta)
 
@@ -368,27 +390,39 @@ func _update_attack_button(delta: float) -> bool:
 		_attack_hold_time += delta
 		if _attack_hold_time >= CHARGE_THRESHOLD and _heavy_attack():
 			_attack_pending = false
+			# Заряд начинается, если есть хоть сколько-то выносливости; тратится она при ударе.
+			if not stamina.has_any():
+				stamina.denied.emit()
+				return false
 			_start_charge()
 			return true
 		return false
 	_attack_pending = false
-	_start_light(0)
-	return true
+	return _start_light(0)
 
 
-func _start_light(index: int) -> void:
+## Лёгкий удар серии. Возвращает false, если не хватило выносливости.
+func _start_light(index: int) -> bool:
 	if weapon.light_combo.is_empty():
-		return
+		return false
+	if not stamina.try_spend(weapon.light_combo[index].stamina_cost):
+		return false
 	_combo_index = index
 	_begin_attack(weapon.light_combo[index], 1.0)
 	_face_instant(_aim_direction())
 	model.play(_attack.animation, 0.08, _attack.anim_speed, true)
+	return true
 
 
 ## Сильный удар. charged = true — после заряда (анимация продолжается с позы замаха).
 func _start_heavy(charged: bool) -> void:
 	var heavy := _heavy_attack()
 	if heavy == null:
+		return
+	# После заряда выносливость проверена в его начале — тратим без отказа.
+	if charged:
+		stamina.spend(heavy.stamina_cost)
+	elif not stamina.try_spend(heavy.stamina_cost):
 		return
 	_combo_index = -1
 	_begin_attack(heavy, 1.0 + CHARGE_BONUS * _charge if charged else 1.0)
@@ -434,6 +468,7 @@ func _update_attack(delta: float) -> void:
 	var in_combo := _combo_index >= 0
 	var has_next := in_combo and _combo_index < weapon.light_combo.size() - 1
 	if _combo_queued and has_next and progress >= _attack.combo_from:
+		_combo_queued = false
 		_start_light(_combo_index + 1)
 	elif progress >= _attack.end_at:
 		_change_state(State.NORMAL)
@@ -475,7 +510,8 @@ func _start_block() -> void:
 	_combat_time_left = COMBAT_IDLE_TIME
 	_block_reaction_left = 0.0
 	_change_state(State.BLOCK)
-	model.play(_block_data().animation, 0.1, 1.0, true)
+	# Корпус и руки держат блок в верхнем слое, ногами управляет _update_block_legs.
+	model.play_upper(_block_data().animation, 0.1, 1.0, true)
 
 
 func _update_block(delta: float) -> void:
@@ -483,17 +519,33 @@ func _update_block(delta: float) -> void:
 	var block := _block_data()
 	_accelerate(_input_direction() * block.move_speed, delta)
 	_face(_aim_direction(), delta, turn_speed)
+	_update_block_legs()
 	if _try_roll() or _try_counter():
 		return
 	if _block_reaction_left > 0.0:
 		_block_reaction_left -= delta
 		if _block_reaction_left <= 0.0:
-			model.play(block.animation, 0.15)
+			model.play_upper(block.animation, 0.15)
 	elif block.hold_time > 0.0:
-		if _state_time >= block.hold_time and model.is_playing():
-			model.pause()
+		if _state_time >= block.hold_time and model.is_upper_playing():
+			model.pause_upper()
 	if not Input.is_action_pressed(&"block"):
 		_change_state(State.NORMAL)
+
+
+## Ноги в блоке: стоят в боевой стойке или шагают. Герой смотрит на прицел, а идти может
+## в любую сторону — при движении спиной вперёд шаг проигрывается задом наперёд.
+func _update_block_legs() -> void:
+	var real := get_real_velocity()
+	var horizontal := Vector3(real.x, 0.0, real.z)
+	var speed := horizontal.length()
+	if speed < 0.15:
+		model.play(weapon.combat_idle if weapon else ANIM_IDLE, 0.2)
+		return
+	var backwards := horizontal.normalized().dot(_facing()) < -0.3
+	model.play(ANIM_WALK, 0.2)
+	var playback := clampf(speed / WALK_ANIM_SPEED, 0.5, 2.0)
+	model.set_playback_speed(-playback if backwards else playback)
 
 
 ## Удар пришёлся в блок: урон по доле блока, отдача, вспышка. Щит изнашивается.
@@ -515,9 +567,24 @@ func _on_blocked(damage: int, away: Vector3, knockback: float) -> void:
 			return
 		ShieldWear.apply(_shield_node, shield_durability, shield.max_durability)
 
+	stamina.spend(damage * block.stamina_per_damage)
+	if not stamina.has_any():
+		_guard_break()
+		return
+
 	if block.hit_animation != &"":
-		model.play(block.hit_animation, 0.05, 1.0, true)
+		model.play_upper(block.hit_animation, 0.05, 1.0, true)
 		_block_reaction_left = model.get_animation_length(block.hit_animation)
+
+
+## В блоке кончилась выносливость: защита пробита, герой оглушён и открыт.
+func _guard_break() -> void:
+	model.flash(Color(1.0, 0.5, 0.1, 0.6), 0.3)
+	_shake_camera(0.5)
+	_vibrate(0.5, 0.7, 0.25)
+	_change_state(State.HIT)
+	_stun_time = GUARD_BREAK_STUN_TIME
+	model.play(ANIM_SHIELD_BREAK if shield else ANIM_HIT, 0.05, 1.0, true)
 
 
 ## Щит разлетается в щепки, герой ненадолго оглушён.
@@ -541,6 +608,8 @@ func _break_shield() -> void:
 ## иначе — промах с короткой перезарядкой.
 func _try_counter() -> bool:
 	if not Input.is_action_just_pressed(&"counter") or _counter_cooldown_left > 0.0:
+		return false
+	if not stamina.try_spend(counter_stamina_cost):
 		return false
 	_attack_pending = false
 	_combat_time_left = COMBAT_IDLE_TIME
@@ -605,6 +674,8 @@ func _slow_motion() -> void:
 ## Начинает кувырок, если нажата кнопка и он не на перезарядке.
 func _try_roll() -> bool:
 	if not Input.is_action_just_pressed(&"roll") or _roll_cooldown_left > 0.0:
+		return false
+	if not stamina.try_spend(roll_stamina_cost):
 		return false
 	var dir := _input_direction()
 	_roll_dir = dir.normalized() if dir != Vector3.ZERO else _facing()
@@ -708,6 +779,7 @@ func _update_dead(delta: float) -> void:
 		reset_physics_interpolation()
 		velocity = Vector3.ZERO
 		health.reset()
+		stamina.reset()
 		_change_state(State.NORMAL)
 		model.play(ANIM_IDLE, 0.0)
 
@@ -736,6 +808,9 @@ func _vibrate(weak: float, strong: float, duration: float) -> void:
 
 
 func _change_state(new_state: State) -> void:
+	# Верхний слой анимации нужен только в блоке.
+	if state == State.BLOCK and new_state != State.BLOCK:
+		model.stop_upper()
 	state = new_state
 	_state_time = 0.0
 	if new_state != State.ATTACK:
