@@ -10,15 +10,16 @@ extends CanvasLayer
 @onready var trail_bar: ProgressBar = %TrailBar
 @onready var health_text: Label = %HealthText
 @onready var weapon_label: Label = %WeaponLabel
+@onready var shield_bar: ProgressBar = %ShieldBar
 
 
 func _ready() -> void:
 	if player == null:
 		return
 	player.health.changed.connect(_on_health_changed)
-	player.weapon_changed.connect(_on_weapon_changed)
-	if player.weapon:
-		_on_weapon_changed(player.weapon)
+	player.weapon_changed.connect(func(_weapon: WeaponData) -> void: _refresh_equipment())
+	player.shield_changed.connect(_on_shield_changed)
+	_on_shield_changed(player.shield, player.shield_durability)
 	_on_health_changed(player.health.current, player.health.max_health)
 	trail_bar.value = health_bar.value
 
@@ -39,5 +40,16 @@ func _on_health_changed(current: int, max_value: int) -> void:
 	health_text.text = "%d / %d" % [current, max_value]
 
 
-func _on_weapon_changed(weapon: WeaponData) -> void:
-	weapon_label.text = "Оружие: " + weapon.display_name
+func _on_shield_changed(shield: ShieldData, durability: int) -> void:
+	shield_bar.visible = shield != null
+	if shield:
+		shield_bar.max_value = shield.max_durability
+		shield_bar.value = durability
+	_refresh_equipment()
+
+
+func _refresh_equipment() -> void:
+	var text := player.weapon.display_name if player.weapon else "Без оружия"
+	if player.shield:
+		text += " + " + player.shield.display_name
+	weapon_label.text = text

@@ -1,8 +1,9 @@
-[gd_resource type="Resource" script_class="WeaponData" load_steps=8 format=3]
+[gd_resource type="Resource" script_class="WeaponData" load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/combat/weapon_data.gd" id="1_weapon"]
 [ext_resource type="Script" path="res://scripts/combat/attack_data.gd" id="2_attack"]
 [ext_resource type="PackedScene" path="res://scenes/weapons/sword.tscn" id="3_sword"]
+[ext_resource type="Script" path="res://scripts/combat/block_data.gd" id="4_block"]
 
 [sub_resource type="Resource" id="Attack_a"]
 script = ExtResource("2_attack")
@@ -49,9 +50,13 @@ lunge_window = Vector2(0.2, 0.35)
 hitbox_size = Vector3(2.2, 1.4, 2)
 hitbox_offset = Vector3(0, 0.9, 1.1)
 
+[sub_resource type="Resource" id="Block"]
+script = ExtResource("4_block")
+
 [resource]
 script = ExtResource("1_weapon")
 display_name = "Меч"
 main_hand = ExtResource("3_sword")
 light_combo = Array[ExtResource("2_attack")]([SubResource("Attack_a"), SubResource("Attack_b"), SubResource("Attack_c")])
 heavy_attack = SubResource("Attack_heavy")
+block = SubResource("Block")

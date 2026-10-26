@@ -1,0 +1,39 @@
+[gd_resource type="Resource" script_class="ShieldData" load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/combat/shield_data.gd" id="1_shield"]
+[ext_resource type="Script" path="res://scripts/combat/attack_data.gd" id="2_attack"]
+[ext_resource type="Script" path="res://scripts/combat/block_data.gd" id="3_block"]
+[ext_resource type="PackedScene" path="res://scenes/weapons/shield.tscn" id="4_model"]
+
+[sub_resource type="Resource" id="Block"]
+script = ExtResource("3_block")
+animation = &"Idle_Shield"
+hold_time = 0.0
+hit_animation = &"Shield_OneShot"
+damage_factor = 0.0
+min_dot = 0.5
+move_speed = 1.6
+pushback = 0.25
+
+[sub_resource type="Resource" id="Bash"]
+script = ExtResource("2_attack")
+animation = &"Shield_Dash"
+damage = 10
+knockback = 9.0
+hit_windows = Array[Vector2]([Vector2(0.04, 0.24)])
+combo_from = 1.0
+cancel_from = 0.4
+end_at = 0.65
+charge_pose = 0.03
+lunge_distance = 2.2
+lunge_window = Vector2(0, 0.22)
+hitbox_size = Vector3(1.6, 1.6, 1.4)
+hitbox_offset = Vector3(0, 0.9, 0.8)
+
+[resource]
+script = ExtResource("1_shield")
+display_name = "Деревянный щит"
+model = ExtResource("4_model")
+max_durability = 60
+block = SubResource("Block")
+bash_attack = SubResource("Bash")

@@ -62,6 +62,11 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 
+[node name="ShieldToggle" type="CheckBox" parent="UI/Panel/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Щит в левой руке"
+
 [node name="AnimList" type="ItemList" parent="UI/Panel/Box"]
 unique_name_in_owner = true
 layout_mode = 2

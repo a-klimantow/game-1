@@ -4,9 +4,11 @@ extends Node3D
 ## для data/weapons/*.tres. Запуск: открыть tools/anim_viewer.tscn и нажать F6.
 
 const WEAPONS_DIR := "res://data/weapons/"
+const SHIELD: ShieldData = preload("res://data/shields/wooden_shield.tres")
 
 var _weapons: Array[WeaponData] = []
 var _weapon_nodes: Array[Node] = []
+var _shield_node: Node3D
 var _current: StringName = &""
 
 @onready var model: CharacterModel = $Model
@@ -17,6 +19,7 @@ var _current: StringName = &""
 @onready var turn_slider: HSlider = %TurnSlider
 @onready var info: Label = %Info
 @onready var pause_button: Button = %PauseButton
+@onready var shield_toggle: CheckBox = %ShieldToggle
 
 
 func _ready() -> void:
@@ -42,6 +45,7 @@ func _ready() -> void:
 	time_slider.value_changed.connect(_on_time_scrubbed)
 	turn_slider.value_changed.connect(func(value: float) -> void: model.rotation_degrees.y = value)
 	pause_button.pressed.connect(_toggle_pause)
+	shield_toggle.toggled.connect(_on_shield_toggled)
 
 
 func _process(_delta: float) -> void:
@@ -92,7 +96,11 @@ func _on_weapon_selected(index: int) -> void:
 		_weapon_nodes.append(
 			model.attach_to_bone(weapon.main_hand.instantiate() as Node3D, &"hand_r")
 		)
-	if weapon.off_hand:
-		_weapon_nodes.append(
-			model.attach_to_bone(weapon.off_hand.instantiate() as Node3D, &"hand_l")
-		)
+
+
+func _on_shield_toggled(enabled: bool) -> void:
+	if _shield_node:
+		_shield_node.queue_free()
+		_shield_node = null
+	if enabled:
+		_shield_node = model.attach_to_bone(SHIELD.model.instantiate() as Node3D, &"hand_l")

@@ -29,6 +29,22 @@ const SCENARIOS: Dictionary = {
 		[9.6, &"throw", true],
 		[9.65, &"throw", false],
 	],
+	# Подобрать щит, блокировать до поломки, взять второй щит, выбросить его.
+	"shield":
+	[
+		[0.2, &"move_right", true],
+		[0.62, &"interact", true],
+		[0.67, &"interact", false],
+		[1.3, &"move_right", false],
+		[1.5, &"block", true],
+		[14.0, &"block", false],
+		[14.1, &"move_left", true],
+		[15.6, &"move_left", false],
+		[15.7, &"interact", true],
+		[15.75, &"interact", false],
+		[16.3, &"interact", true],
+		[17.0, &"interact", false],
+	],
 	# Заряженный удар мечом, лёгкая серия, подбор щита, блок щитом, удар щитом с рывком.
 	"weapons":
 	[
@@ -86,7 +102,7 @@ const SCENARIOS: Dictionary = {
 		[15.55, &"throw", false],
 	],
 }
-const DURATION: float = 18.0
+const DURATION: float = 18.5
 
 var _timeline: Array = []
 var _time: float = 0.0
@@ -158,7 +174,8 @@ func _log_state() -> void:
 			speed,
 			(
 				(" неуязвим" if _player.is_invulnerable() else "")
-				+ (" [рядом оружие]" if _player.pickup_candidate else "")
+				+ (" [рядом предмет]" if _player.pickup_candidate else "")
+				+ (" щит %d" % _player.shield_durability if _player.shield else "")
 			),
 		]
 	)

@@ -1,17 +1,20 @@
 class_name Player
 extends CharacterBody3D
 ## Серёга: шаг/бег/спринт, кувырок, удары оружием (лёгкая серия и заряжаемый сильный удар),
-## блок, бросок пороховой бомбы и подбор оружия. Удары и блок берутся из WeaponData.
+## блок, бросок пороховой бомбы, подбор оружия и щита. Удары и блок — из WeaponData,
+## со щитом блок и сильный удар — из ShieldData; щит изнашивается и ломается.
 ## Получает урон: блок спереди гасит удар, кувырок даёт неуязвимость.
 ##
 ## Управление (клавиатура / геймпад Xbox): WASD / левый стик — движение
 ## (слабый наклон стика — шаг), Shift / B (удерживать) — спринт, Пробел / A — кувырок,
 ## ЛКМ / X — удар (удерживать — заряженный сильный), RT — сильный удар сразу,
-## ПКМ / LT, LB (удерживать) — блок, Q / RB — бомба, E / Y — подобрать оружие.
+## ПКМ / LT, LB (удерживать) — блок, Q / RB — бомба, E / Y — подобрать,
+## удерживать E / Y — выбросить щит.
 ## С мышью удары и броски летят в курсор, с геймпадом — по правому стику
 ## (или по направлению движения) с мягким автонаведением на ближайшего врага.
 
 signal weapon_changed(weapon: WeaponData)
+signal shield_changed(shield: ShieldData, durability: int)
 
 enum State { NORMAL, ATTACK, CHARGE, BLOCK, ROLL, THROW, HIT, DEAD }
 
@@ -23,6 +26,7 @@ const ANIM_ROLL: StringName = &"Roll"
 const ANIM_THROW: StringName = &"OverhandThrow"
 const ANIM_HIT: StringName = &"Hit_Chest"
 const ANIM_DEATH: StringName = &"Death01"
+const ANIM_SHIELD_BREAK: StringName = &"Idle_Shield_Break"
 
 # Скорость тела внутри анимаций, м/с (измерено по root motion из UAL1_Standard_RM).
 # Делим на неё реальную скорость, чтобы ноги не скользили по земле.
@@ -54,8 +58,12 @@ const THROW_SPEED: float = 1.2
 ## Момент выпуска бомбы, в секундах анимации броска.
 const THROW_RELEASE_TIME: float = 0.55
 
-## Сколько секунд герой оглушён после пропущенного удара.
+## Сколько секунд герой оглушён после пропущенного удара и после поломки щита.
 const HIT_STUN_TIME: float = 0.4
+const SHIELD_BREAK_STUN_TIME: float = 0.6
+## Сколько держать «подобрать», чтобы выбросить щит.
+const DROP_HOLD_TIME: float = 0.5
+const SHIELD_DEBRIS_COLOR := Color(0.45, 0.28, 0.14)
 ## Через сколько секунд после смерти герой возрождается.
 const RESPAWN_TIME: float = 3.0
 ## Длительность «заморозки» мира при попадании — для веса удара (сильный — дольше).
@@ -94,10 +102,12 @@ const GAMEPAD_THROW_DISTANCE: float = 7.0
 
 var state: State = State.NORMAL
 var weapon: WeaponData
+var shield: ShieldData
+var shield_durability: int = 0
 ## Для автотестов и катсцен: если задано, герой целится сюда, а не в курсор.
 var aim_point_override: Vector3 = Vector3.INF
-## Оружие на земле, которое сейчас можно подобрать (его выставляет WeaponPickup).
-var pickup_candidate: WeaponPickup
+## Предмет на земле, который сейчас можно подобрать (его выставляет ItemPickup).
+var pickup_candidate: ItemPickup
 
 var _state_time: float = 0.0
 var _attack: AttackData
@@ -110,6 +120,10 @@ var _attack_pending: bool = false
 var _attack_hold_time: float = 0.0
 var _charge: float = 0.0
 var _block_reaction_left: float = 0.0
+var _stun_time: float = HIT_STUN_TIME
+var _interact_pending: bool = false
+var _interact_hold_time: float = 0.0
+var _shield_node: Node3D
 var _roll_dir: Vector3 = Vector3.ZERO
 var _roll_cooldown_left: float = 0.0
 var _combat_time_left: float = 0.0
@@ -140,7 +154,7 @@ func _ready() -> void:
 	attack_area.hit_landed.connect(_on_attack_landed)
 
 
-## Берёт оружие в руки: вешает модели на кости и подставляет удары и блок.
+## Берёт оружие в правую руку: вешает модель на кость и подставляет удары и блок.
 func equip(new_weapon: WeaponData) -> void:
 	for node: Node in _weapon_nodes:
 		node.queue_free()
@@ -150,11 +164,39 @@ func equip(new_weapon: WeaponData) -> void:
 		_weapon_nodes.append(
 			model.attach_to_bone(weapon.main_hand.instantiate() as Node3D, &"hand_r")
 		)
-	if weapon.off_hand:
-		_weapon_nodes.append(
-			model.attach_to_bone(weapon.off_hand.instantiate() as Node3D, &"hand_l")
-		)
+	# Двуручное оружие со щитом не носят — щит падает на землю.
+	if shield and not weapon.one_handed:
+		drop_shield()
 	weapon_changed.emit(weapon)
+
+
+## Берёт щит в левую руку. durability < 0 — новый щит с полной прочностью.
+func equip_shield(data: ShieldData, durability: int = -1) -> void:
+	_remove_shield_model()
+	shield = data
+	shield_durability = durability if durability >= 0 else data.max_durability
+	var shield_model := data.model.instantiate() as Node3D
+	_shield_node = model.attach_to_bone(shield_model, &"hand_l")
+	ShieldWear.apply(_shield_node, shield_durability, shield.max_durability)
+	shield_changed.emit(shield, shield_durability)
+
+
+## Кладёт щит на землю перед собой — с той прочностью, что у него осталась.
+func drop_shield() -> void:
+	if shield == null:
+		return
+	var at := global_position + _facing() * 0.9
+	ItemPickup.drop_shield(get_parent(), at, shield, shield_durability)
+	_remove_shield_model()
+	shield = null
+	shield_durability = 0
+	shield_changed.emit(null, 0)
+
+
+func _remove_shield_model() -> void:
+	if _shield_node:
+		_shield_node.queue_free()
+		_shield_node = null
 
 
 func is_blocking() -> bool:
@@ -228,8 +270,40 @@ func _update_normal(delta: float) -> void:
 		pass
 	elif Input.is_action_just_pressed(&"throw") and bomb_scene:
 		_start_throw()
-	elif Input.is_action_just_pressed(&"interact") and pickup_candidate:
+	else:
+		_update_interact_button(delta)
+
+
+## Короткое нажатие «подобрать» — взять предмет рядом, удержание — выбросить щит.
+func _update_interact_button(delta: float) -> void:
+	if Input.is_action_just_pressed(&"interact"):
+		_interact_pending = true
+		_interact_hold_time = 0.0
+	if not _interact_pending:
+		return
+	if Input.is_action_pressed(&"interact"):
+		_interact_hold_time += delta
+		if _interact_hold_time >= DROP_HOLD_TIME:
+			_interact_pending = false
+			drop_shield()
+		return
+	_interact_pending = false
+	if pickup_candidate and pickup_candidate.can_take(self):
 		pickup_candidate.take(self)
+
+
+## Блок со щитом — от щита, без него — от оружия.
+func _block_data() -> BlockData:
+	if shield and shield.block:
+		return shield.block
+	return weapon.block if weapon else null
+
+
+## Сильный удар: со щитом — удар щитом, без него — сильный удар оружия.
+func _heavy_attack() -> AttackData:
+	if shield and shield.bash_attack:
+		return shield.bash_attack
+	return weapon.heavy_attack if weapon else null
 
 
 ## Анимация ходьбы по реальной скорости: стойка → шаг → бег → спринт,
@@ -267,7 +341,7 @@ func _update_attack_button(delta: float) -> bool:
 		return false
 	if Input.is_action_pressed(&"attack"):
 		_attack_hold_time += delta
-		if _attack_hold_time >= CHARGE_THRESHOLD and weapon.heavy_attack:
+		if _attack_hold_time >= CHARGE_THRESHOLD and _heavy_attack():
 			_attack_pending = false
 			_start_charge()
 			return true
@@ -288,10 +362,11 @@ func _start_light(index: int) -> void:
 
 ## Сильный удар. charged = true — после заряда (анимация продолжается с позы замаха).
 func _start_heavy(charged: bool) -> void:
-	if weapon == null or weapon.heavy_attack == null:
+	var heavy := _heavy_attack()
+	if heavy == null:
 		return
 	_combo_index = -1
-	_begin_attack(weapon.heavy_attack, 1.0 + CHARGE_BONUS * _charge if charged else 1.0)
+	_begin_attack(heavy, 1.0 + CHARGE_BONUS * _charge if charged else 1.0)
 	model.clear_flash()
 	if charged:
 		# Продолжаем с позы замаха, на которой анимация замерла.
@@ -344,9 +419,10 @@ func _update_attack(delta: float) -> void:
 
 func _start_charge() -> void:
 	_change_state(State.CHARGE)
+	_attack = _heavy_attack()
 	_charge = 0.0
 	_combat_time_left = COMBAT_IDLE_TIME
-	var heavy := weapon.heavy_attack
+	var heavy := _heavy_attack()
 	_face_instant(_aim_direction())
 	model.play(heavy.animation, 0.1, heavy.anim_speed, true)
 	model.flash(CHARGE_COLOR, FULL_CHARGE_TIME, true)
@@ -355,7 +431,7 @@ func _start_charge() -> void:
 func _update_charge(delta: float) -> void:
 	_accelerate(Vector3.ZERO, delta)
 	_face(_aim_direction(), delta, turn_speed * 0.5)
-	var heavy := weapon.heavy_attack
+	var heavy := _attack
 	# Замах доходит до позы и замирает, пока держат кнопку.
 	if _state_time >= heavy.charge_pose * heavy.duration(model) and model.is_playing():
 		model.pause()
@@ -374,39 +450,63 @@ func _start_block() -> void:
 	_combat_time_left = COMBAT_IDLE_TIME
 	_block_reaction_left = 0.0
 	_change_state(State.BLOCK)
-	model.play(weapon.block_animation if weapon else &"Sword_Block", 0.1, 1.0, true)
+	model.play(_block_data().animation, 0.1, 1.0, true)
 
 
 func _update_block(delta: float) -> void:
 	_combat_time_left = COMBAT_IDLE_TIME
-	var move_speed := weapon.block_move_speed if weapon else 0.0
-	_accelerate(_input_direction() * move_speed, delta)
+	var block := _block_data()
+	_accelerate(_input_direction() * block.move_speed, delta)
 	_face(_aim_direction(), delta, turn_speed)
 	if _try_roll():
 		return
 	if _block_reaction_left > 0.0:
 		_block_reaction_left -= delta
 		if _block_reaction_left <= 0.0:
-			model.play(weapon.block_animation, 0.15)
-	elif weapon and weapon.block_hold_time > 0.0:
-		if _state_time >= weapon.block_hold_time and model.is_playing():
+			model.play(block.animation, 0.15)
+	elif block.hold_time > 0.0:
+		if _state_time >= block.hold_time and model.is_playing():
 			model.pause()
 	if not Input.is_action_pressed(&"block"):
 		_change_state(State.NORMAL)
 
 
-## Удар пришёлся в блок: урон по доле оружия, отдача, вспышка.
+## Удар пришёлся в блок: урон по доле блока, отдача, вспышка. Щит изнашивается.
 func _on_blocked(damage: int, away: Vector3, knockback: float) -> void:
-	var passed := ceili(damage * weapon.block_damage_factor)
+	var block := _block_data()
+	var passed := ceili(damage * block.damage_factor)
 	if passed > 0:
 		health.damage(passed)
-	_set_horizontal_velocity(away * knockback * weapon.block_pushback)
+	_set_horizontal_velocity(away * knockback * block.pushback)
 	model.flash(Color(0.6, 0.8, 1.0, 0.5), 0.2)
 	_shake_camera(0.25)
 	_vibrate(0.3, 0.0, 0.12)
-	if weapon.block_hit_animation != &"":
-		model.play(weapon.block_hit_animation, 0.05, 1.0, true)
-		_block_reaction_left = model.get_animation_length(weapon.block_hit_animation)
+
+	if shield:
+		shield_durability = maxi(shield_durability - damage, 0)
+		shield_changed.emit(shield, shield_durability)
+		if shield_durability == 0:
+			_break_shield()
+			return
+		ShieldWear.apply(_shield_node, shield_durability, shield.max_durability)
+
+	if block.hit_animation != &"":
+		model.play(block.hit_animation, 0.05, 1.0, true)
+		_block_reaction_left = model.get_animation_length(block.hit_animation)
+
+
+## Щит разлетается в щепки, герой ненадолго оглушён.
+func _break_shield() -> void:
+	var at := _shield_node.global_position if _shield_node else global_position + Vector3.UP
+	Debris.burst(get_parent(), at, SHIELD_DEBRIS_COLOR)
+	_remove_shield_model()
+	shield = null
+	shield_changed.emit(null, 0)
+	_shake_camera(0.7)
+	_vibrate(0.6, 1.0, 0.3)
+	_change_state(State.HIT)
+	_stun_time = SHIELD_BREAK_STUN_TIME
+	model.play(ANIM_SHIELD_BREAK, 0.05, 1.0, true)
 
 
 # --- Кувырок и бомба ---------------------------------------------------------
@@ -420,6 +520,7 @@ func _try_roll() -> bool:
 	_roll_dir = dir.normalized() if dir != Vector3.ZERO else _facing()
 	_face_instant(_roll_dir)
 	_attack_pending = false
+	_interact_pending = false
 	_change_state(State.ROLL)
 	model.play(ANIM_ROLL, 0.05, roll_anim_speed, true)
 	return true
@@ -481,8 +582,8 @@ func _on_hit_received(damage: int, source_position: Vector3, knockback: float) -
 	var from_attacker := source_position - global_position
 	from_attacker.y = 0.0
 	var away := -from_attacker.normalized() if from_attacker.length() > 0.01 else -_facing()
-	var min_dot := weapon.block_min_dot if weapon else 0.34
-	if state == State.BLOCK and _facing().dot(-away) >= min_dot:
+	var block := _block_data()
+	if state == State.BLOCK and block and _facing().dot(-away) >= block.min_dot:
 		_on_blocked(damage, away, knockback)
 		return
 
@@ -493,6 +594,7 @@ func _on_hit_received(damage: int, source_position: Vector3, knockback: float) -
 	if health.is_dead():
 		return
 	_change_state(State.HIT)
+	_stun_time = HIT_STUN_TIME
 	_face_instant(-away)
 	_set_horizontal_velocity(away * knockback)
 	model.play(ANIM_HIT, 0.05, 1.0, true)
@@ -500,7 +602,7 @@ func _on_hit_received(damage: int, source_position: Vector3, knockback: float) -
 
 func _update_hit(delta: float) -> void:
 	_accelerate(Vector3.ZERO, delta)
-	if _state_time >= HIT_STUN_TIME:
+	if _state_time >= _stun_time:
 		_change_state(State.NORMAL)
 
 
