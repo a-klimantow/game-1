@@ -11,7 +11,8 @@ extends CharacterBody3D
 ## (слабый наклон стика — шаг), Shift / B (удерживать) — спринт, Пробел / A — кувырок,
 ## ЛКМ / X — удар (удерживать — заряженный сильный), RT — сильный удар сразу,
 ## ПКМ / LT (удерживать) — блок, F / колесо / LB — контратака (когда над врагом «!»),
-## Q / RB — бомба, R / R3 — выстрел из пищали (пустая — перезарядка), E / Y — подобрать,
+## Q / RB — бомба (с копьём в руках — держать: прицел, отпустить: метнуть копьё),
+## R / R3 — выстрел из пищали (пустая — перезарядка), E / Y — подобрать,
 ## колесо мыши (нажатие) / T / R3 — захват цели (смена цели — колёсико / рывок правого стика),
 ## Tab / крестовина вверх — сменить оружие в руках (1 — меч, 2 — пищаль): с пищалью в руках
 ## удар = выстрел, блок — только щитом, сильного удара и контратаки нет,
@@ -25,7 +26,20 @@ signal firearm_changed(firearm: FirearmData, loaded: bool, powder: int)
 ## В руках сменилось оружие: true — пищаль, false — меч.
 signal ranged_mode_changed(ranged: bool)
 
-enum State { NORMAL, ATTACK, CHARGE, BLOCK, COUNTER, ROLL, THROW, SHOOT, RELOAD, HIT, DEAD }
+enum State {
+	NORMAL,
+	ATTACK,
+	CHARGE,
+	BLOCK,
+	COUNTER,
+	ROLL,
+	THROW_AIM,
+	THROW,
+	SHOOT,
+	RELOAD,
+	HIT,
+	DEAD,
+}
 
 const ANIM_IDLE: StringName = &"Idle"
 const ANIM_WALK: StringName = &"Walk"
@@ -101,6 +115,8 @@ const AUTO_AIM_RANGE: float = 6.0
 const AUTO_AIM_MIN_DOT: float = 0.77
 ## Куда летит бомба с геймпада, если врага рядом нет.
 const GAMEPAD_THROW_DISTANCE: float = 7.0
+## Скорость шага, пока целишься броском оружия.
+const THROW_AIM_MOVE_SPEED: float = 1.5
 
 @export_group("Движение")
 @export var walk_speed: float = 1.6
@@ -174,6 +190,8 @@ var _roll_cooldown_left: float = 0.0
 var _combat_time_left: float = 0.0
 var _bomb_thrown: bool = false
 var _throw_target: Vector3 = Vector3.ZERO
+## Идёт бросок оружия (а не бомбы): какое оружие.
+var _thrown_weapon: WeaponData
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var _spawn_transform: Transform3D
 var _weapon_nodes: Array[Node] = []
@@ -216,9 +234,7 @@ func _ready() -> void:
 
 ## Берёт оружие в правую руку: вешает модель на кость и подставляет удары и блок.
 func equip(new_weapon: WeaponData) -> void:
-	for node: Node in _weapon_nodes:
-		node.queue_free()
-	_weapon_nodes.clear()
+	_remove_weapon_model()
 	weapon = new_weapon
 	if weapon.main_hand:
 		_weapon_nodes.append(
@@ -231,6 +247,37 @@ func equip(new_weapon: WeaponData) -> void:
 		shield_changed.emit(shield, shield_durability)
 	_show_gun(ranged_mode)
 	weapon_changed.emit(weapon)
+
+
+## Оставляет героя без оружия в руках; щит из-за спины возвращается в руку.
+func unequip() -> void:
+	_remove_weapon_model()
+	weapon = null
+	if shield and shield_on_back:
+		shield_on_back = false
+		_attach_shield_model()
+		shield_changed.emit(shield, shield_durability)
+	weapon_changed.emit(null)
+
+
+func _remove_weapon_model() -> void:
+	for node: Node in _weapon_nodes:
+		node.queue_free()
+	_weapon_nodes.clear()
+
+
+## Модель оружия в руке (null — оружия нет или у него нет модели).
+func _weapon_model() -> Node3D:
+	if _weapon_nodes.is_empty() or _weapon_nodes[0].get_child_count() == 0:
+		return null
+	return _weapon_nodes[0].get_child(0) as Node3D
+
+
+## Хват модели оружия: обычный (корень сцены) и поверх него extra (например, для броска).
+func _set_weapon_grip(extra: Transform3D) -> void:
+	var node := _weapon_model()
+	if node and weapon:
+		node.transform = (weapon.main_hand.instantiate() as Node3D).transform * extra
 
 
 ## Вешает пищаль на пояс (модель в руке появляется только при стрельбе и перезарядке).
@@ -342,6 +389,8 @@ func _physics_process(delta: float) -> void:
 			_update_counter(delta)
 		State.ROLL:
 			_update_roll(delta)
+		State.THROW_AIM:
+			_update_throw_aim(delta)
 		State.THROW:
 			_update_throw(delta)
 		State.SHOOT:
@@ -404,6 +453,9 @@ func _update_normal(delta: float) -> void:
 		pass
 	elif Input.is_action_just_pressed(&"shoot") and firearm:
 		_start_shoot_or_reload()
+	elif Input.is_action_just_pressed(&"throw") and _can_throw_weapon():
+		if stamina.try_spend(weapon.throw_stamina_cost):
+			_start_throw_aim()
 	elif Input.is_action_just_pressed(&"throw") and bomb_scene:
 		if stamina.try_spend(throw_stamina_cost):
 			_start_throw()
@@ -428,6 +480,8 @@ func _update_weapon_switch() -> bool:
 
 ## С пищалью в руках блок возможен только щитом.
 func _can_block() -> bool:
+	if _block_data() == null:
+		return false
 	return not ranged_mode or shield_in_hand() != null
 
 
@@ -849,10 +903,12 @@ func _fire() -> void:
 		_on_attack_landed(null)
 
 
-## Луч выстрела по направлению прицела на высоте груди — до стены или до врага.
-## Возвращает from, position (куда попадёт), hit (во что-то попал), enemy (Hurtbox врага или null).
-func aim_ray() -> Dictionary:
-	var max_range := firearm.max_range if firearm else 20.0
+## Луч выстрела по направлению прицела на высоте груди — до стены или до врага
+## (max_range < 0 — дальность пищали). Возвращает from, position (куда попадёт),
+## hit (во что-то попал), enemy (Hurtbox врага или null).
+func aim_ray(max_range: float = -1.0) -> Dictionary:
+	if max_range < 0.0:
+		max_range = firearm.max_range if firearm else 20.0
 	var origin := global_position + Vector3.UP * AimGuide.LINE_HEIGHT
 	var target := origin + _aim_direction() * max_range
 	var query := PhysicsRayQueryParameters3D.create(origin, target, 1 | Hurtbox.LAYER)
@@ -955,6 +1011,7 @@ func _start_throw() -> void:
 	offset = offset.limit_length(throw_range)
 	_throw_target = global_position + offset
 	_bomb_thrown = false
+	_thrown_weapon = null
 	_combat_time_left = COMBAT_IDLE_TIME
 	_face_instant(offset)
 	_change_state(State.THROW)
@@ -963,6 +1020,9 @@ func _start_throw() -> void:
 
 func _update_throw(delta: float) -> void:
 	_accelerate(Vector3.ZERO, delta)
+	if _thrown_weapon:
+		_update_weapon_throw()
+		return
 	if not _bomb_thrown and _state_time >= THROW_RELEASE_TIME / THROW_SPEED:
 		_bomb_thrown = true
 		var bomb := bomb_scene.instantiate() as Bomb
@@ -972,6 +1032,81 @@ func _update_throw(delta: float) -> void:
 		return
 	if _state_time >= 0.85 * model.get_animation_length(ANIM_THROW) / THROW_SPEED:
 		_change_state(State.NORMAL)
+
+
+func _can_throw_weapon() -> bool:
+	return weapon != null and not ranged_mode and weapon.can_throw() and weapon.main_hand != null
+
+
+## Бросок оружия из рук (копьё): замах, выпуск в момент throw_release_time, оружие летит.
+## Держишь бросок — копьё занесено, видна линия прицела; отпустил — бросок.
+func _start_throw_aim() -> void:
+	_thrown_weapon = weapon
+	_bomb_thrown = false
+	_combat_time_left = COMBAT_IDLE_TIME
+	_change_state(State.THROW_AIM)
+	_set_weapon_grip(weapon.throw_grip)
+	model.play_upper(weapon.throw_aim_animation, 0.15)
+
+
+func _update_throw_aim(delta: float) -> void:
+	_combat_time_left = COMBAT_IDLE_TIME
+	_accelerate(_input_direction() * THROW_AIM_MOVE_SPEED, delta)
+	_face(_aim_direction(), delta, turn_speed)
+	_update_upper_body_legs()
+	if _try_roll():
+		return
+	if not Input.is_action_pressed(&"throw"):
+		_start_weapon_throw()
+
+
+## Бросок с позы замаха: оружие вылетает в момент throw_release_time и летит в прицел.
+func _start_weapon_throw() -> void:
+	_thrown_weapon = weapon
+	_bomb_thrown = false
+	_face_instant(_aim_direction())
+	_change_state(State.THROW)
+	_set_weapon_grip(weapon.throw_grip)
+	model.play(weapon.throw_animation, 0.1, weapon.throw_anim_speed, true)
+	model.seek(weapon.throw_aim_pose_time)
+
+
+func _update_weapon_throw() -> void:
+	var data := _thrown_weapon
+	# Время анимации броска (она началась с позы замаха).
+	var anim_time := data.throw_aim_pose_time + _state_time * data.throw_anim_speed
+	if not _bomb_thrown:
+		_face_instant(_aim_direction())
+		if anim_time >= data.throw_release_time:
+			_release_weapon()
+	elif _try_roll():
+		return
+	if anim_time >= data.throw_end_at * model.get_animation_length(data.throw_animation):
+		_change_state(State.NORMAL)
+
+
+## Оружие вылетает из руки и летит в точку прицела: во врага на линии или в конец линии.
+func _release_weapon() -> void:
+	_bomb_thrown = true
+	var from := model.get_bone_global_position(&"RightHand")
+	var target: Vector3 = throw_aim_ray()["position"]
+	var exclude: Array[RID] = [get_rid(), hurtbox.get_rid()]
+	ThrownWeapon.launch(get_parent(), from, target, _thrown_weapon, hurtbox.team, exclude)
+	unequip()
+	_shake_camera(0.2)
+
+
+## Луч прицела броска оружия (как aim_ray, но на дальность броска).
+func throw_aim_ray() -> Dictionary:
+	var data := _thrown_weapon if _thrown_weapon else weapon
+	return aim_ray(data.throw_range if data else 20.0)
+
+
+## Сейчас целимся броском оружия: копьё занесено и ещё не вылетело.
+func is_aiming_throw() -> bool:
+	if state == State.THROW_AIM:
+		return true
+	return state == State.THROW and _thrown_weapon != null and not _bomb_thrown
 
 
 # --- Урон по герою -----------------------------------------------------------
@@ -1048,10 +1183,14 @@ func _vibrate(weak: float, strong: float, duration: float) -> void:
 
 
 func _change_state(new_state: State) -> void:
-	# Верхний слой анимации нужен только в блоке и при перезарядке.
-	var leaving_upper := state == State.BLOCK or state == State.RELOAD
+	# Верхний слой анимации нужен только в блоке, при перезарядке и прицеливании броском.
+	var leaving_upper := state == State.BLOCK or state == State.RELOAD or state == State.THROW_AIM
 	if leaving_upper and new_state != state:
 		model.stop_upper()
+	# Бросок оружия прерван до выпуска (кувырок, удар по герою) — хват возвращается обычный.
+	var was_throwing := state == State.THROW_AIM or state == State.THROW
+	if was_throwing and new_state != State.THROW and _thrown_weapon and weapon == _thrown_weapon:
+		_set_weapon_grip(Transform3D.IDENTITY)
 	var leaving_gun := state == State.SHOOT or state == State.RELOAD
 	if leaving_gun and new_state != State.SHOOT and new_state != State.RELOAD:
 		# Быстрый выстрел с мечом в руках — пищаль убирается; в режиме пищали — остаётся.

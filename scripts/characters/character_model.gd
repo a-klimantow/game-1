@@ -39,8 +39,8 @@ const LOWER_BODY_BONES: Array[StringName] = [
 ## Скелет переносится на гуманоидный профиль при импорте (bone_map_iglesias.tres).
 const IGLESIAS_DIR := "res://assets/animations/kevin_iglesias/"
 ## Анимации Iglesias с этими словами в имени зацикливаются
-## (ходьба, бег, стойки, позы удержания).
-const LOOPED_WORDS: Array[String] = ["Walk", "Run", "Idle", "Strafe", "WeaponHold", "Grip"]
+## (ходьба, бег, стойки, позы удержания и прицеливания).
+const LOOPED_WORDS: Array[String] = ["Walk", "Run", "Idle", "Strafe", "Hold", "Grip"]
 
 ## Общая библиотека из всех LIBRARIES, собирается один раз на всю игру.
 static var _merged_library: AnimationLibrary
@@ -91,6 +91,12 @@ func play(anim: StringName, blend: float = 0.15, speed: float = 1.0, restart: bo
 
 
 ## Множитель скорости текущей анимации, например чтобы шаги совпадали со скоростью героя.
+## Перематывает основную анимацию на time секунд.
+func seek(time: float) -> void:
+	if anim_player:
+		anim_player.seek(time, true)
+
+
 func set_playback_speed(value: float) -> void:
 	if anim_player:
 		anim_player.speed_scale = value

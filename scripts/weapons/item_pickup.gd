@@ -36,6 +36,15 @@ static func drop_shield(parent: Node, at: Vector3, data: ShieldData, left: int) 
 	return pickup
 
 
+## Кладёт на землю оружие (например, брошенное копьё).
+static func drop_weapon(parent: Node, at: Vector3, data: WeaponData) -> ItemPickup:
+	var pickup := (load(SCENE_PATH) as PackedScene).instantiate() as ItemPickup
+	pickup.weapon = data
+	parent.add_child(pickup)
+	pickup.global_position = at
+	return pickup
+
+
 func _ready() -> void:
 	collision_layer = 0
 	collision_mask = 1 << 1  # слой «player»

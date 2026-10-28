@@ -19,3 +19,29 @@ extends Resource
 
 @export_group("Блок")
 @export var block: BlockData
+
+@export_group("Бросок")
+## Анимация броска (Q / RB). Пусто — оружие не метают.
+@export var throw_animation: StringName = &""
+@export var throw_anim_speed: float = 1.0
+## Поза прицеливания (держишь кнопку броска).
+@export var throw_aim_animation: StringName = &""
+## С какой секунды анимации броска начинать после прицеливания (поза замаха).
+@export var throw_aim_pose_time: float = 0.0
+## Дальность прицела броска, м.
+@export var throw_range: float = 18.0
+## Когда оружие вылетает из руки (секунды анимации).
+@export var throw_release_time: float = 0.5
+## На какой доле анимации бросок заканчивается.
+@export var throw_end_at: float = 0.8
+@export var throw_damage: int = 20
+@export var throw_knockback: float = 5.0
+## Скорость полёта, м/с.
+@export var throw_speed: float = 22.0
+@export var throw_stamina_cost: float = 15.0
+## Хват на время броска — поверх обычного хвата (корня сцены модели).
+@export var throw_grip: Transform3D = Transform3D.IDENTITY
+
+
+func can_throw() -> bool:
+	return throw_animation != &""

@@ -1,6 +1,6 @@
 class_name AimGuide
 extends Node3D
-## Прицел с пищалью в руках: линия выстрела от героя и метка на конце.
+## Прицел с пищалью в руках или при броске копья: линия от героя и метка на конце.
 ## Если линия упирается во врага — краснеет.
 
 const IDLE_COLOR := Color(1.0, 0.9, 0.6, 0.35)
@@ -49,10 +49,11 @@ func setup(player: Player) -> void:
 func _process(_delta: float) -> void:
 	if _player == null:
 		return
-	visible = _player.is_aiming_firearm()
+	var throwing := _player.is_aiming_throw()
+	visible = throwing or _player.is_aiming_firearm()
 	if not visible:
 		return
-	var ray := _player.aim_ray()
+	var ray := _player.throw_aim_ray() if throwing else _player.aim_ray()
 	var from: Vector3 = ray["from"]
 	var to: Vector3 = ray["position"]
 	var on_enemy: bool = ray["enemy"] != null
