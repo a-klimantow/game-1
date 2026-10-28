@@ -50,7 +50,8 @@
 
 ## Щиты
 Щит — отдельный предмет для левой руки: `ShieldData` в `data/shields/*.tres` (блок `BlockData`,
-удар щитом, `max_durability`). Носится только с одноручным оружием (`WeaponData.one_handed`).
+удар щитом, `max_durability`). В руке — только с одноручным оружием (`WeaponData.one_handed`), с двуручным
+висит за спиной (`Player.shield_on_back`): не блокирует и не изнашивается.
 Прочность конкретного щита хранится у героя (`Player.shield_durability`) или у предмета на земле
 (`ItemPickup.durability`); блок отнимает урон удара, при 0 щит ломается.
 

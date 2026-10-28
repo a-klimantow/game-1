@@ -87,6 +87,9 @@ const GUARD_BREAK_STUN_TIME: float = 0.8
 ## Сколько держать «подобрать», чтобы выбросить щит.
 const DROP_HOLD_TIME: float = 0.5
 const SHIELD_DEBRIS_COLOR := Color(0.45, 0.28, 0.14)
+## Щит за спиной (при двуручном оружии): висит на кости груди, лицом назад.
+const SHIELD_BACK_BONE: StringName = &"Chest"
+const SHIELD_BACK_TRANSFORM := Transform3D(Basis(Vector3.UP, PI), Vector3(0.0, 0.08, -0.2))
 ## Через сколько секунд после смерти герой возрождается.
 const RESPAWN_TIME: float = 3.0
 ## Длительность «заморозки» мира при попадании — для веса удара (сильный — дольше).
@@ -137,6 +140,8 @@ var state: State = State.NORMAL
 var weapon: WeaponData
 var shield: ShieldData
 var shield_durability: int = 0
+## Щит висит за спиной (с двуручным оружием): не блокирует и не изнашивается.
+var shield_on_back: bool = false
 var firearm: FirearmData
 var firearm_loaded: bool = false
 var powder: int = 0
@@ -219,9 +224,11 @@ func equip(new_weapon: WeaponData) -> void:
 		_weapon_nodes.append(
 			model.attach_to_bone(weapon.main_hand.instantiate() as Node3D, &"RightHand")
 		)
-	# Двуручное оружие со щитом не носят — щит падает на землю.
-	if shield and not weapon.one_handed:
-		drop_shield()
+	# С двуручным оружием щит уходит за спину, с одноручным — возвращается в руку.
+	if shield and shield_on_back == weapon.one_handed:
+		shield_on_back = not weapon.one_handed
+		_attach_shield_model()
+		shield_changed.emit(shield, shield_durability)
 	_show_gun(ranged_mode)
 	weapon_changed.emit(weapon)
 
@@ -250,15 +257,31 @@ func set_ranged_mode(on: bool) -> void:
 	ranged_mode_changed.emit(on)
 
 
-## Берёт щит в левую руку. durability < 0 — новый щит с полной прочностью.
+## Берёт щит в левую руку (с двуручным оружием — вешает за спину).
+## durability < 0 — новый щит с полной прочностью.
 func equip_shield(data: ShieldData, durability: int = -1) -> void:
-	_remove_shield_model()
 	shield = data
 	shield_durability = durability if durability >= 0 else data.max_durability
-	var shield_model := data.model.instantiate() as Node3D
-	_shield_node = model.attach_to_bone(shield_model, &"LeftHand")
-	ShieldWear.apply(_shield_node, shield_durability, shield.max_durability)
+	shield_on_back = weapon != null and not weapon.one_handed
+	_attach_shield_model()
 	shield_changed.emit(shield, shield_durability)
+
+
+## Щит в руке, которым можно блокировать и бить (null — щита нет или он за спиной).
+func shield_in_hand() -> ShieldData:
+	return null if shield_on_back else shield
+
+
+## Вешает модель щита в левую руку или за спину.
+func _attach_shield_model() -> void:
+	_remove_shield_model()
+	var shield_model := shield.model.instantiate() as Node3D
+	if shield_on_back:
+		_shield_node = model.attach_to_bone(shield_model, SHIELD_BACK_BONE)
+		shield_model.transform = SHIELD_BACK_TRANSFORM
+	else:
+		_shield_node = model.attach_to_bone(shield_model, &"LeftHand")
+	ShieldWear.apply(_shield_node, shield_durability, shield.max_durability)
 
 
 ## Кладёт щит на землю перед собой — с той прочностью, что у него осталась.
@@ -270,6 +293,7 @@ func drop_shield() -> void:
 	_remove_shield_model()
 	shield = null
 	shield_durability = 0
+	shield_on_back = false
 	shield_changed.emit(null, 0)
 
 
@@ -404,7 +428,7 @@ func _update_weapon_switch() -> bool:
 
 ## С пищалью в руках блок возможен только щитом.
 func _can_block() -> bool:
-	return not ranged_mode or shield != null
+	return not ranged_mode or shield_in_hand() != null
 
 
 ## Короткое нажатие «подобрать» — взять предмет рядом, удержание — выбросить щит.
@@ -427,14 +451,14 @@ func _update_interact_button(delta: float) -> void:
 
 ## Блок со щитом — от щита, без него — от оружия.
 func _block_data() -> BlockData:
-	if shield and shield.block:
+	if shield_in_hand() and shield.block:
 		return shield.block
 	return weapon.block if weapon else null
 
 
 ## Сильный удар: со щитом — удар щитом, без него — сильный удар оружия.
 func _heavy_attack() -> AttackData:
-	if shield and shield.bash_attack:
+	if shield_in_hand() and shield.bash_attack:
 		return shield.bash_attack
 	return weapon.heavy_attack if weapon else null
 
@@ -651,7 +675,7 @@ func _on_blocked(damage: int, away: Vector3, knockback: float) -> void:
 	_shake_camera(0.25)
 	_vibrate(0.3, 0.0, 0.12)
 
-	if shield:
+	if shield_in_hand():
 		shield_durability = maxi(shield_durability - damage, 0)
 		shield_changed.emit(shield, shield_durability)
 		if shield_durability == 0:
@@ -676,7 +700,7 @@ func _guard_break() -> void:
 	_vibrate(0.5, 0.7, 0.25)
 	_change_state(State.HIT)
 	_stun_time = GUARD_BREAK_STUN_TIME
-	model.play(ANIM_SHIELD_BREAK if shield else ANIM_HIT, 0.05, 1.0, true)
+	model.play(ANIM_SHIELD_BREAK if shield_in_hand() else ANIM_HIT, 0.05, 1.0, true)
 
 
 ## Щит разлетается в щепки, герой ненадолго оглушён.

@@ -2,7 +2,7 @@ class_name ItemPickup
 extends Area3D
 ## Предмет на земле: оружие или щит. Парит и крутится; подходишь — подсказка,
 ## нажимаешь «подобрать» — герой берёт его. Оружие меняется на своё (своё остаётся здесь),
-## щит берётся в левую руку, если оружие одноручное.
+## щит берётся в левую руку (с двуручным оружием — за спину).
 
 const SCENE_PATH := "res://scenes/weapons/item_pickup.tscn"
 
@@ -55,10 +55,8 @@ func _process(delta: float) -> void:
 
 
 ## Можно ли герою сейчас взять этот предмет.
-func can_take(player: Player) -> bool:
-	if shield:
-		return player.weapon == null or player.weapon.one_handed
-	return weapon != null
+func can_take(_taker: Player) -> bool:
+	return shield != null or weapon != null
 
 
 func take(player: Player) -> void:
@@ -127,8 +125,8 @@ func _refresh_prompt() -> void:
 		prompt.text = (
 			"%s — взять: %s (%d/%d)" % [key, shield.display_name, left, shield.max_durability]
 		)
-		if _player and not can_take(_player):
-			prompt.text = "%s\nнужно одноручное оружие" % shield.display_name
+		if _player and _player.weapon and not _player.weapon.one_handed:
+			prompt.text += "\nс двуручным оружием — за спину"
 	elif weapon:
 		prompt.text = "%s — взять: %s" % [key, weapon.display_name]
 

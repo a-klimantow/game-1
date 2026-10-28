@@ -99,8 +99,10 @@ func _refresh_equipment() -> void:
 	if player.ranged_mode and player.firearm:
 		main = player.firearm.display_name
 	var text := "В руках: " + main
-	if player.shield:
+	if player.shield_in_hand():
 		text += " + " + player.shield.display_name
+	elif player.shield:
+		text += "   (%s за спиной)" % player.shield.display_name
 	var key := "крестовина ↑" if InputDevice.is_gamepad() else "Tab"
 	if player.firearm:
 		text += "   (%s — сменить)" % key
