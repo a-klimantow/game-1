@@ -2,7 +2,7 @@
 class_name CharacterModel
 extends Node3D
 ## Собирает персонажа из частей Quaternius (одежда + голова + причёски) на одном скелете
-## и проигрывает анимации из Universal Animation Library (части 1 и 2).
+## и проигрывает анимации Universal Animation Library (1 и 2) и Kevin Iglesias.
 ##
 ## Все части пака используют один скелет из 65 костей, поэтому меши частей
 ## просто переносятся на скелет одежды.
@@ -18,21 +18,29 @@ const LIBRARIES: Array[AnimationLibrary] = [
 	preload("res://assets/animations/UAL2_Standard.glb"),
 ]
 
-## Кости ног и таза: в верхнем слое их дорожки убираются, ими управляет основной слой.
+## Кости ног и таза (имена гуманоидного профиля Godot — после переноса скелетов):
+## в верхнем слое их дорожки убираются, ими управляет основной слой.
 const LOWER_BODY_BONES: Array[StringName] = [
-	&"root",
-	&"pelvis",
-	&"thigh_l",
-	&"calf_l",
-	&"foot_l",
-	&"ball_l",
+	&"Root",
+	&"Hips",
+	&"LeftUpperLeg",
+	&"LeftLowerLeg",
+	&"LeftFoot",
+	&"LeftToes",
 	&"ball_leaf_l",
-	&"thigh_r",
-	&"calf_r",
-	&"foot_r",
-	&"ball_r",
+	&"RightUpperLeg",
+	&"RightLowerLeg",
+	&"RightFoot",
+	&"RightToes",
 	&"ball_leaf_r",
 ]
+
+## Папка с анимациями Kevin Iglesias: каждый .fbx — библиотека из одной анимации.
+## Скелет переносится на гуманоидный профиль при импорте (bone_map_iglesias.tres).
+const IGLESIAS_DIR := "res://assets/animations/kevin_iglesias/"
+## Анимации Iglesias с этими словами в имени зацикливаются
+## (ходьба, бег, стойки, позы удержания).
+const LOOPED_WORDS: Array[String] = ["Walk", "Run", "Idle", "Strafe", "WeaponHold", "Grip"]
 
 ## Общая библиотека из всех LIBRARIES, собирается один раз на всю игру.
 static var _merged_library: AnimationLibrary
@@ -142,10 +150,31 @@ static func get_library() -> AnimationLibrary:
 	if _merged_library == null:
 		_merged_library = AnimationLibrary.new()
 		for library: AnimationLibrary in LIBRARIES:
-			for anim_name: StringName in library.get_animation_list():
-				if not _merged_library.has_animation(anim_name):
-					_merged_library.add_animation(anim_name, library.get_animation(anim_name))
+			_merge(library)
+		for file: String in ResourceLoader.list_directory(IGLESIAS_DIR):
+			if file.get_extension() == "fbx":
+				_merge_iglesias(load(IGLESIAS_DIR + file) as AnimationLibrary)
 	return _merged_library
+
+
+static func _merge(library: AnimationLibrary) -> void:
+	for anim_name: StringName in library.get_animation_list():
+		if not _merged_library.has_animation(anim_name):
+			_merged_library.add_animation(anim_name, library.get_animation(anim_name))
+
+
+## Анимация Iglesias называется по файлу: «HumanM_Walk01_Forward» → «Walk01_Forward».
+static func _merge_iglesias(library: AnimationLibrary) -> void:
+	if library == null:
+		return
+	for anim_name: StringName in library.get_animation_list():
+		var animation := library.get_animation(anim_name)
+		var short := str(anim_name).trim_prefix("HumanM_").trim_prefix("Human_")
+		for word: String in LOOPED_WORDS:
+			if word in short:
+				animation.loop_mode = Animation.LOOP_LINEAR
+		if not _merged_library.has_animation(short):
+			_merged_library.add_animation(short, animation)
 
 
 ## Готовит копию анимации без дорожек костей ног для верхнего слоя.

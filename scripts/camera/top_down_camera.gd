@@ -11,6 +11,13 @@ extends Camera3D
 ## Максимальное смещение картинки при тряске силой 1.0.
 @export var shake_amount: float = 0.35
 
+## Насколько подаваться к захваченной цели (доля расстояния) и не дальше скольких метров.
+@export var focus_lean: float = 0.3
+@export var focus_max_shift: float = 4.0
+
+## Захваченная цель: камера подаётся в её сторону, чтобы и герой, и враг были в кадре.
+var focus_target: Node3D
+
 var _shake: float = 0.0
 
 
@@ -25,7 +32,12 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if target == null:
 		return
-	var desired := target.get_global_transform_interpolated().origin + offset
+	var center := target.get_global_transform_interpolated().origin
+	if focus_target and is_instance_valid(focus_target):
+		var to_focus := focus_target.global_position - center
+		to_focus.y = 0.0
+		center += (to_focus * focus_lean).limit_length(focus_max_shift)
+	var desired := center + offset
 	global_position = global_position.lerp(desired, 1.0 - exp(-follow_speed * delta))
 
 	_shake = move_toward(_shake, 0.0, shake_decay * delta)

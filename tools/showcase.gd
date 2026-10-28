@@ -8,6 +8,50 @@ const ARENA: PackedScene = preload("res://scenes/levels/test_arena.tscn")
 
 ## [время в секундах, действие, нажать(true)/отпустить(false)]
 const SCENARIOS: Dictionary = {
+	# Захват цели, удары в неё, смена цели рывком правого стика, снятие захвата.
+	"lock":
+	[
+		[0.2, &"move_right", true],
+		[1.2, &"move_right", false],
+		[1.5, &"lock_on", true],
+		[1.55, &"lock_on", false],
+		[3.0, &"attack", true],
+		[3.05, &"attack", false],
+		[3.3, &"attack", true],
+		[3.35, &"attack", false],
+		[5.0, &"aim_right", true],
+		[5.1, &"aim_right", false],
+		[5.4, &"aim_left", true],
+		[5.5, &"aim_left", false],
+		[7.0, &"lock_on", true],
+		[7.05, &"lock_on", false],
+	],
+	# Выстрел в одержимого, перезарядка на ходу, второй выстрел.
+	"gun":
+	[
+		[0.2, &"move_right", true],
+		[1.0, &"move_right", false],
+		[2.0, &"shoot", true],
+		[2.05, &"shoot", false],
+		[3.2, &"shoot", true],
+		[3.25, &"shoot", false],
+		[3.4, &"move_left", true],
+		[4.6, &"move_left", false],
+		[7.0, &"shoot", true],
+		[7.05, &"shoot", false],
+		[8.5, &"switch_weapon", true],
+		[8.55, &"switch_weapon", false],
+		[9.0, &"attack", true],
+		[9.05, &"attack", false],
+		[12.5, &"attack", true],
+		[12.55, &"attack", false],
+		[13.0, &"move_right", true],
+		[14.0, &"move_right", false],
+		[14.5, &"switch_weapon", true],
+		[14.55, &"switch_weapon", false],
+		[15.0, &"attack", true],
+		[15.05, &"attack", false],
+	],
 	# Спринт до истощения, кувырки подряд, серия ударов, блок мечом до пробития.
 	"stamina":
 	[
@@ -137,6 +181,8 @@ const SCENARIOS: Dictionary = {
 const DURATION: float = 18.5
 ## В этих сценариях автопилот сам жмёт контратаку, как только враг рядом становится уязвим.
 const AUTO_COUNTER_SCENARIOS: Array[String] = ["counter"]
+## В этих сценариях автопилот не подставляет прицел сам (проверяется захват цели).
+const MANUAL_AIM_SCENARIOS: Array[String] = ["lock"]
 
 var _timeline: Array = []
 var _time: float = 0.0
@@ -144,6 +190,7 @@ var _next: int = 0
 var _player: Player
 var _log_timer: float = 0.0
 var _auto_counter: bool = false
+var _manual_aim: bool = false
 var _counter_held: bool = false
 
 
@@ -152,6 +199,7 @@ func _ready() -> void:
 	var scenario: String = args[0] if args.size() > 0 else "movement"
 	_timeline = SCENARIOS.get(scenario, SCENARIOS["movement"])
 	_auto_counter = scenario in AUTO_COUNTER_SCENARIOS
+	_manual_aim = scenario in MANUAL_AIM_SCENARIOS
 	print("Сценарий: ", scenario)
 	var arena := ARENA.instantiate()
 	add_child(arena)
@@ -162,7 +210,7 @@ func _physics_process(delta: float) -> void:
 	_time += delta
 	# Целимся в ближайшего врага — мышь в автопилоте не работает.
 	var nearest := _nearest_enemy()
-	if nearest:
+	if nearest and not _manual_aim:
 		_player.aim_point_override = nearest.global_position
 	while _next < _timeline.size():
 		var step: Array = _timeline[_next]
@@ -206,7 +254,11 @@ func _log_state() -> void:
 		"%5.2fs  %-10s %-6s %3d hp %3d вын%s  %-16s  v=%.1f%s"
 		% [
 			_time,
-			_player.weapon.display_name if _player.weapon else "-",
+			(
+				_player.firearm.display_name
+				if _player.ranged_mode
+				else (_player.weapon.display_name if _player.weapon else "-")
+			),
 			Player.State.keys()[_player.state],
 			_player.health.current,
 			roundi(_player.stamina.current),
@@ -217,6 +269,15 @@ func _log_state() -> void:
 				(" неуязвим" if _player.is_invulnerable() else "")
 				+ (" [рядом предмет]" if _player.pickup_candidate else "")
 				+ (" щит %d" % _player.shield_durability if _player.shield else "")
+				+ (" [цель: %s]" % _player.locked_target().name if _player.locked_target() else "")
+				+ (
+					(
+						" пищаль %s/%d"
+						% ["заряж" if _player.firearm_loaded else "пуста", _player.powder]
+					)
+					if _player.firearm
+					else ""
+				)
 			),
 		]
 	)

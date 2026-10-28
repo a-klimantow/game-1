@@ -19,6 +19,7 @@ var _denied_tween: Tween
 @onready var weapon_label: Label = %WeaponLabel
 @onready var shield_bar: ProgressBar = %ShieldBar
 @onready var stamina_bar: ProgressBar = %StaminaBar
+@onready var firearm_label: Label = %FirearmLabel
 
 
 func _ready() -> void:
@@ -30,6 +31,10 @@ func _ready() -> void:
 	_on_shield_changed(player.shield, player.shield_durability)
 	_on_health_changed(player.health.current, player.health.max_health)
 	trail_bar.value = health_bar.value
+	player.ranged_mode_changed.connect(func(_ranged: bool) -> void: _refresh_equipment())
+	player.firearm_changed.connect(_on_firearm_changed)
+	if player.firearm:
+		_on_firearm_changed(player.firearm, player.firearm_loaded, player.powder)
 	player.stamina.changed.connect(_on_stamina_changed)
 	player.stamina.denied.connect(_on_stamina_denied)
 	_on_stamina_changed(player.stamina.current, player.stamina.max_stamina)
@@ -49,6 +54,18 @@ func _on_health_changed(current: int, max_value: int) -> void:
 	if current > trail_bar.value:
 		trail_bar.value = current
 	health_text.text = "%d / %d" % [current, max_value]
+
+
+func _on_firearm_changed(firearm: FirearmData, loaded: bool, powder: int) -> void:
+	var key := "R3" if InputDevice.is_gamepad() else "R"
+	var status := (
+		"заряжена" if loaded else ("пуста — %s: перезарядить" % key if powder > 0 else "пуста")
+	)
+	firearm_label.text = "%s: %s · порох %d" % [firearm.display_name, status, powder]
+	# Пищаль пуста и пороха нет — строка мигает красным.
+	if not loaded and powder == 0:
+		firearm_label.modulate = Color(1.6, 0.4, 0.3)
+		create_tween().tween_property(firearm_label, "modulate", Color.WHITE, 0.4)
 
 
 func _on_stamina_changed(current: float, max_value: float) -> void:
@@ -78,7 +95,13 @@ func _on_shield_changed(shield: ShieldData, durability: int) -> void:
 
 
 func _refresh_equipment() -> void:
-	var text := player.weapon.display_name if player.weapon else "Без оружия"
+	var main := player.weapon.display_name if player.weapon else "Без оружия"
+	if player.ranged_mode and player.firearm:
+		main = player.firearm.display_name
+	var text := "В руках: " + main
 	if player.shield:
 		text += " + " + player.shield.display_name
+	var key := "крестовина ↑" if InputDevice.is_gamepad() else "Tab"
+	if player.firearm:
+		text += "   (%s — сменить)" % key
 	weapon_label.text = text

@@ -94,7 +94,7 @@ func _on_weapon_selected(index: int) -> void:
 	var weapon := _weapons[index]
 	if weapon.main_hand:
 		_weapon_nodes.append(
-			model.attach_to_bone(weapon.main_hand.instantiate() as Node3D, &"hand_r")
+			model.attach_to_bone(weapon.main_hand.instantiate() as Node3D, &"RightHand")
 		)
 
 
@@ -103,4 +103,4 @@ func _on_shield_toggled(enabled: bool) -> void:
 		_shield_node.queue_free()
 		_shield_node = null
 	if enabled:
-		_shield_node = model.attach_to_bone(SHIELD.model.instantiate() as Node3D, &"hand_l")
+		_shield_node = model.attach_to_bone(SHIELD.model.instantiate() as Node3D, &"LeftHand")
