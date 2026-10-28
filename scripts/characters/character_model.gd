@@ -167,8 +167,14 @@ static func _merge(library: AnimationLibrary) -> void:
 static func _merge_iglesias(library: AnimationLibrary) -> void:
 	if library == null:
 		return
+	var profile := SkeletonProfileHumanoid.new()
 	for anim_name: StringName in library.get_animation_list():
 		var animation := library.get_animation(anim_name)
+		# Кости вне гуманоидного профиля (B-handProp.R, B-spineProxy…) у героя нет — убираем их.
+		for track: int in range(animation.get_track_count() - 1, -1, -1):
+			var bone := StringName(animation.track_get_path(track).get_concatenated_subnames())
+			if profile.find_bone(bone) < 0:
+				animation.remove_track(track)
 		var short := str(anim_name).trim_prefix("HumanM_").trim_prefix("Human_")
 		for word: String in LOOPED_WORDS:
 			if word in short:

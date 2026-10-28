@@ -41,7 +41,7 @@ materials/extract_format=0
 materials/extract_path=""
 _subresources={
 "nodes": {
-"PATH:Rig/Skeleton3D": {
+"PATH:Skeleton3D": {
 "retarget/bone_map": Resource("res://assets/animations/bone_map_iglesias.tres")
 }
 }
