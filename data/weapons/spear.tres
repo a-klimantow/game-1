@@ -1,0 +1,69 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=9 format=3]
+
+[ext_resource type="Script" path="res://scripts/combat/weapon_data.gd" id="1_weapon"]
+[ext_resource type="Script" path="res://scripts/combat/attack_data.gd" id="2_attack"]
+[ext_resource type="PackedScene" path="res://scenes/weapons/spear.tscn" id="3_spear"]
+[ext_resource type="Script" path="res://scripts/combat/block_data.gd" id="4_block"]
+
+[sub_resource type="Resource" id="Attack_thrust"]
+script = ExtResource("2_attack")
+animation = &"AttackPolearm01"
+anim_speed = 1.2
+damage = 12
+knockback = 4.0
+stamina_cost = 10.0
+hit_windows = Array[Vector2]([Vector2(0.26, 0.4)])
+combo_from = 0.45
+cancel_from = 0.45
+end_at = 0.7
+hitbox_size = Vector3(1.2, 1.4, 2.6)
+hitbox_offset = Vector3(0, 0.9, 1.5)
+
+[sub_resource type="Resource" id="Attack_heavy"]
+script = ExtResource("2_attack")
+animation = &"AttackPolearm01"
+anim_speed = 0.9
+damage = 26
+knockback = 8.0
+stamina_cost = 25.0
+hit_windows = Array[Vector2]([Vector2(0.26, 0.42)])
+combo_from = 1.0
+cancel_from = 0.5
+end_at = 0.75
+charge_pose = 0.2
+lunge_distance = 1.5
+lunge_window = Vector2(0.24, 0.36)
+hitbox_size = Vector3(1.4, 1.4, 3)
+hitbox_offset = Vector3(0, 0.9, 1.7)
+
+[sub_resource type="Resource" id="Attack_riposte"]
+script = ExtResource("2_attack")
+animation = &"AttackPolearm01"
+anim_speed = 1.4
+damage = 30
+knockback = 9.0
+stamina_cost = 0.0
+hit_windows = Array[Vector2]([Vector2(0.26, 0.4)])
+combo_from = 1.0
+cancel_from = 0.45
+end_at = 0.65
+lunge_distance = 1.0
+lunge_window = Vector2(0.24, 0.34)
+hitbox_size = Vector3(1.4, 1.4, 2.8)
+hitbox_offset = Vector3(0, 0.9, 1.6)
+
+[sub_resource type="Resource" id="Block"]
+script = ExtResource("4_block")
+move_speed = 1.1
+stamina_per_damage = 2.0
+
+[resource]
+script = ExtResource("1_weapon")
+display_name = "Копьё"
+main_hand = ExtResource("3_spear")
+one_handed = false
+light_combo = Array[ExtResource("2_attack")]([SubResource("Attack_thrust"), SubResource("Attack_thrust")])
+heavy_attack = SubResource("Attack_heavy")
+counter_attack = SubResource("Attack_riposte")
+combat_idle = &"CombatIdlePolearm01"
+block = SubResource("Block")

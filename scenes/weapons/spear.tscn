@@ -1,0 +1,57 @@
+[gd_scene load_steps=7 format=3]
+
+[sub_resource type="StandardMaterial3D" id="Mat_steel"]
+albedo_color = Color(0.78, 0.8, 0.84, 1)
+metallic = 0.9
+roughness = 0.25
+
+[sub_resource type="StandardMaterial3D" id="Mat_wood"]
+albedo_color = Color(0.45, 0.3, 0.17, 1)
+roughness = 0.85
+
+[sub_resource type="CylinderMesh" id="Mesh_shaft"]
+material = SubResource("Mat_wood")
+top_radius = 0.02
+bottom_radius = 0.024
+height = 2.1
+radial_segments = 10
+
+[sub_resource type="CylinderMesh" id="Mesh_socket"]
+material = SubResource("Mat_steel")
+top_radius = 0.02
+bottom_radius = 0.027
+height = 0.12
+radial_segments = 10
+
+[sub_resource type="CylinderMesh" id="Mesh_tip"]
+material = SubResource("Mat_steel")
+top_radius = 0.0
+bottom_radius = 0.045
+height = 0.32
+radial_segments = 8
+
+[sub_resource type="CylinderMesh" id="Mesh_butt"]
+material = SubResource("Mat_steel")
+top_radius = 0.026
+bottom_radius = 0.02
+height = 0.07
+radial_segments = 10
+
+[node name="Spear" type="Node3D"]
+transform = Transform3D(-0.0742, 0.9972, -0.0069, -0.9878, -0.0725, 0.1374, 0.1366, 0.017, 0.9905, 0.014, 0.117, 0.014)
+
+[node name="Shaft" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
+mesh = SubResource("Mesh_shaft")
+
+[node name="Socket" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.75, 0)
+mesh = SubResource("Mesh_socket")
+
+[node name="Tip" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 0.35, 0, 1.97, 0)
+mesh = SubResource("Mesh_tip")
+
+[node name="Butt" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.37, 0)
+mesh = SubResource("Mesh_butt")
