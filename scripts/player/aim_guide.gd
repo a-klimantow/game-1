@@ -49,11 +49,11 @@ func setup(player: Player) -> void:
 func _process(_delta: float) -> void:
 	if _player == null:
 		return
-	var throwing := _player.is_aiming_throw()
-	visible = throwing or _player.is_aiming_firearm()
+	var throwing := _player.thrower.is_aiming()
+	visible = throwing or _player.gun.is_aiming()
 	if not visible:
 		return
-	var ray := _player.throw_aim_ray() if throwing else _player.aim_ray()
+	var ray := _player.thrower.aim_ray() if throwing else _player.gun.aim_ray()
 	var from: Vector3 = ray["from"]
 	var to: Vector3 = ray["position"]
 	var on_enemy: bool = ray["enemy"] != null
